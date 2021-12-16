@@ -9,6 +9,8 @@ struct Page {
 use std::io::Write;
 use std::fs::File;
 use std::io::Read;
+use std::fs::OpenOptions;
+
 impl Page {
     pub fn new() -> Self {
         let bytes = [0; LEN_PAGE as usize];
@@ -16,7 +18,7 @@ impl Page {
     }
 
     pub fn save(&self) -> std::io::Result<()> {
-        let mut f = File::create("f")?;
+        let mut f = OpenOptions::new().truncate(true).open("f")?;
         f.write_all(self.bytes.as_ref())
     }
 
@@ -63,10 +65,14 @@ impl Leaf {
     }
 
     pub fn add(&mut self, key: u16, value: String) {
-        self.set_value(value);
-        self.set_key(key);
-        self.add_pointer();
-        self.increment_number_of_pointer();
+        if self.can_add(value.len() as u16) {
+            self.set_value(value);
+            self.set_key(key);
+            self.add_pointer();
+            self.increment_number_of_pointer();    
+        } else {
+            println!("can not add");
+        }
     }
 
     pub fn search(&self, searching_key: u16) -> Result<String, Error> {
@@ -87,6 +93,23 @@ impl Leaf {
             }
         }
         Err(Error::NotFound)
+    }
+
+    fn can_add(&self, value_length: u16) -> bool {
+        let rest_of_space = self.rest_of_space();
+        println!("2 + 2 + 2 + value_length: {:?} rest_of_space: {:?}", 2 + 2 + 2 + value_length, rest_of_space);
+        // pointer 2
+        // key 2
+        // value_length 2
+        2 + 2 + 2 + value_length <= rest_of_space
+    }
+
+    fn rest_of_space(&self) -> u16 {
+        let end = self.end_of_free_space();
+        let free_space_count = 4 + 2 * self.number_of_pointer();
+        let rest_of_space = end - free_space_count;
+        println!("end: {:?} free_space_count: {:?}", end, free_space_count);
+        rest_of_space
     }
 
     fn set_key(&mut self, key: u16) {
@@ -180,9 +203,10 @@ fn main() {
     let mut leaf = Leaf::new();
     let _ = leaf.page.load();
 
-    // leaf.add(13, "abc".to_string());
-    // leaf.add(2000, "defg".to_string());
-    // leaf.add(200, "こんにちは".to_string());
+    leaf.add(13, "abc".to_string());
+    leaf.add(2000, "defg".to_string());
+    leaf.add(200, "こんにちは".to_string());
+    leaf.add(8976, "ありがとう".to_string());
 
     let res = leaf.search(13);
     println!("search 13: {:?}", res);
@@ -190,8 +214,11 @@ fn main() {
     println!("search 2000: {:?}", res);
     let res = leaf.search(200);
     println!("search 200: {:?}", res);
+    let res = leaf.search(8976);
+    println!("search 8976: {:?}", res);
 
-    // println!("leaf: {:?}", leaf);
+    println!("leaf: {:?}", leaf);
+    // println!("rest_of_space: {:?}", leaf.rest_of_space());
 
-    // let _ = leaf.page.save();
+    let _ = leaf.page.save();
 }
