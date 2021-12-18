@@ -1,38 +1,18 @@
-const LEN_PAGE: u16 = 64;
-
-#[repr(C)]
-#[derive(Debug)]
-struct Page {
-    bytes: [u8; LEN_PAGE as usize]
-}
-
-use std::io::Write;
-use std::fs::File;
-use std::io::Read;
-use std::fs::OpenOptions;
-
-impl Page {
-    pub fn new() -> Self {
-        let bytes = [0; LEN_PAGE as usize];
-        Page { bytes: bytes }
-    }
-
-    pub fn save(&self) -> std::io::Result<()> {
-        let mut f = OpenOptions::new().truncate(true).open("f")?;
-        f.write_all(self.bytes.as_ref())
-    }
-
-    pub fn load(&mut self) -> std::io::Result<()> {
-        let mut f = File::open("f")?;
-        f.read(self.bytes.as_mut())?;
-        Ok(())
-    }
-}
-
-#[repr(C)]
-#[derive(Debug)]
-struct Pointer(pub u16);
 use std::slice;
+use std::convert::TryInto;
+use crate::{
+    error::Error, 
+    page::{
+        Page,
+        LEN_PAGE,
+    }
+};
+
+#[repr(C)]
+#[derive(Debug)]
+pub struct Leaf {
+    pub page: Page
+}
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -45,16 +25,9 @@ struct Header {
 
 #[repr(C)]
 #[derive(Debug)]
-struct Leaf {
-    page: Page
-}
+struct Pointer(pub u16);
 
-#[derive(Debug)]
-enum Error {
-    NotFound,
-}
 
-use std::convert::TryInto;
 impl Leaf {
     pub fn new() -> Self {
         let mut page = Page::new();
@@ -65,14 +38,10 @@ impl Leaf {
     }
 
     pub fn add(&mut self, key: u16, value: String) {
-        if self.can_add(value.len() as u16) {
-            self.set_value(value);
-            self.set_key(key);
-            self.add_pointer();
-            self.increment_number_of_pointer();    
-        } else {
-            println!("can not add");
-        }
+        self.set_value(value);
+        self.set_key(key);
+        self.add_pointer();
+        self.increment_number_of_pointer();   
     }
 
     pub fn search(&self, searching_key: u16) -> Result<String, Error> {
@@ -95,7 +64,7 @@ impl Leaf {
         Err(Error::NotFound)
     }
 
-    fn can_add(&self, value_length: u16) -> bool {
+    pub fn can_add(&self, value_length: u16) -> bool {
         let rest_of_space = self.rest_of_space();
         println!("2 + 2 + 2 + value_length: {:?} rest_of_space: {:?}", 2 + 2 + 2 + value_length, rest_of_space);
         // pointer 2
@@ -199,7 +168,8 @@ impl Leaf {
     }
 }
 
-fn main() {
+#[test]
+fn test() {
     let mut leaf = Leaf::new();
     let _ = leaf.page.load();
 
