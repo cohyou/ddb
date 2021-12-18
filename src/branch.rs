@@ -25,9 +25,22 @@ impl Branch {
         Branch { page: page }
     }
 
-    pub fn set_number_of_pointer(&mut self, number: u16) {
+    pub fn set_max_pointer(&mut self, number: u16) {
         let bytes = number.to_le_bytes();
         self.page.bytes[4] = bytes[0];
         self.page.bytes[5] = bytes[1];
+    }
+
+    pub fn max_pointer(&self) -> u16 {
+        let header = self.header();
+        header.max_pointer
+    }
+
+    fn header(&self) -> Header {
+        let ptr_bytes = &self.page.bytes[0..4];
+        let p = ptr_bytes.as_ptr() as *const Header;
+        let header: Header;
+        unsafe { header = *p; }
+        header
     }
 }

@@ -161,9 +161,7 @@ impl Leaf {
         let ptr_bytes = &self.page.bytes[0..4];
         let p = ptr_bytes.as_ptr() as *const Header;
         let header: Header;
-        unsafe {
-            header = *p;
-        }
+        unsafe { header = *p; }
         header
     }
 }
