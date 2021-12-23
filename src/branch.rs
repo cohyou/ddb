@@ -1,4 +1,5 @@
 use crate::page::Page;
+use crate::error::Error;
 
 #[repr(C)]
 #[derive(Debug)]
@@ -23,6 +24,12 @@ impl Branch {
     pub fn new() -> Self {
         let page = Page::new();
         Branch { page: page }
+    }
+
+    pub fn search(&self, _searching_key: u16) -> Result<u16, Error> {
+        let next_pointer = self.max_pointer();
+        Ok(next_pointer)
+        // Err(Error::NotFound)
     }
 
     pub fn set_max_pointer(&mut self, number: u16) {

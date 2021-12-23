@@ -8,7 +8,7 @@ use crate::{
 #[derive(Debug)]
 pub struct BTree {
     root: Branch,
-    leaf: Leaf,
+    leaves: Vec<Leaf>,
 }
 
 impl BTree {
@@ -19,26 +19,40 @@ impl BTree {
         let mut leaf = Leaf::new();
         let _ = leaf.page.load();
 
-        BTree { root: root, leaf: leaf }
+        BTree { root: root, leaves: vec![leaf] }
     }
 
     pub fn add(&mut self, key: u16, value: String) {
-        if self.leaf.can_add(value.len() as u16) {
-            self.leaf.add(key, value);
-            let _ = self.leaf.page.save();
+        let leaf_index = self.get_target_leaf_index(key) as usize;
+        if self.leaves[leaf_index].can_add(value.len() as u16) {
+            self.leaves[leaf_index].add(key, value);
+            let _ = self.leaves[leaf_index].page.save();
         } else {
-            println!("can not add");
+            self.add_branch();
         }
     }
 
-    pub fn search(&self, searching_key: u16) -> Result<String, Error> {
-        let next_pointer = self.root.max_pointer();
-        let leaf = self.leaf(next_pointer);
-        leaf.search(searching_key)
+    pub fn search(&self, key: u16) -> Result<String, Error> {
+        let leaf_index = self.search_internal(key)?;
+        let leaf = self.leaf(leaf_index);
+        leaf.search(key)
     }
 
-    fn leaf<'a>(&'a self, _pointer: u16) -> &'a Leaf {
-        &self.leaf
+    fn search_internal(&self, key: u16) -> Result<u16, Error>  {
+        let next_pointer = self.root.search(key)?;
+        Ok(next_pointer)
+    }
+
+    fn get_target_leaf_index(&self, _key: u16) -> u16 {
+        0
+    }
+
+    fn add_branch(&mut self) {
+        println!("can not add");
+    }
+
+    fn leaf<'a>(&'a self, pointer: u16) -> &'a Leaf {
+        &self.leaves[pointer as usize]
     }
 }
 
@@ -46,4 +60,29 @@ impl BTree {
 fn test() {
     let btree = BTree::new();
     assert_eq!(btree.root.max_pointer(), 1);
+}
+
+#[test]
+fn test2() {
+    let mut btree = BTree::new();
+    assert_eq!(btree.root.max_pointer(), 1);
+
+    btree.add(13, "abc".to_string());
+    btree.add(2000, "defg".to_string());
+    btree.add(200, "こんにちは".to_string());
+    btree.add(8976, "ありがと".to_string());
+    btree.add(6, "ぽ".to_string());
+
+    let res = btree.search(13);
+    println!("search 13: {:?}", res);
+    let res = btree.search(2000);
+    println!("search 2000: {:?}", res);
+    let res = btree.search(200);
+    println!("search 200: {:?}", res);
+    let res = btree.search(8976);
+    println!("search 8976: {:?}", res);
+    let res = btree.search(6);
+    println!("search 6: {:?}", res);
+
+    println!("leaf: {:?}", btree);
 }
