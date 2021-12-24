@@ -24,7 +24,7 @@ struct Header {
 }
 
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Clone)]
 struct Pointer(pub u16);
 
 
@@ -71,6 +71,10 @@ impl Leaf {
         // key 2
         // value_length 2
         2 + 2 + 2 + value_length <= rest_of_space
+    }
+
+    pub fn list(&self) -> Vec<Pointer> {
+        self.pointers().to_vec()
     }
 
     fn rest_of_space(&self) -> u16 {
@@ -189,4 +193,16 @@ fn test() {
     // println!("rest_of_space: {:?}", leaf.rest_of_space());
 
     let _ = leaf.page.save();
+}
+
+#[test]
+fn test2() {
+    let mut leaf = Leaf::new();
+
+    leaf.add(13, "abc".to_string());
+    leaf.add(2000, "defg".to_string());
+    leaf.add(200, "こんにちは".to_string());
+    leaf.add(8976, "ありがとう".to_string());
+
+    assert_eq!(leaf.list(), vec![Pointer(13), Pointer(200), Pointer(2000), Pointer(8976)]);
 }

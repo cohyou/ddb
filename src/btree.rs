@@ -35,8 +35,18 @@ impl BTree {
     pub fn search(&self, key: u16) -> Result<String, Error> {
         let leaf_index = self.search_internal(key)?;
         let leaf = self.leaf(leaf_index);
-        leaf.search(key)
+        if let Some(leaf) = leaf {
+            leaf.search(key)
+        } else {
+            Err(Error::NotFound)
+        }
     }
+
+    // pub fn list(&self) -> Vec<u16> {
+    //     let leaf = &self.leaves[0];
+    //     println!("leaf.pointers: {:?}", leaf.pointers());
+    //     vec![]
+    // }
 
     fn search_internal(&self, key: u16) -> Result<u16, Error>  {
         let next_pointer = self.root.search(key)?;
@@ -51,8 +61,8 @@ impl BTree {
         println!("can not add");
     }
 
-    fn leaf<'a>(&'a self, pointer: u16) -> &'a Leaf {
-        &self.leaves[pointer as usize]
+    fn leaf<'a>(&'a self, pointer: u16) -> Option<&'a Leaf> {
+        self.leaves.get(pointer as usize)
     }
 }
 
