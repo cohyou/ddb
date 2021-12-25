@@ -31,9 +31,9 @@ struct Pointer(pub u16);
 impl Leaf {
     pub fn new() -> Self {
         let mut page = Page::new();
-        let len_bytes = LEN_PAGE.to_le_bytes();
-        page.bytes[2] = len_bytes[0];
-        page.bytes[3] = len_bytes[1];
+
+        page.set_u16_bytes(2, LEN_PAGE);
+
         Leaf { page: page }
     }
 
@@ -98,7 +98,7 @@ impl Leaf {
         let end = self.end_of_free_space();
         let free_space_count = 4 + 2 * self.number_of_pointer();
         let rest_of_space = end - free_space_count;
-        // println!("end: {:?} free_space_count: {:?}", end, free_space_count);
+        
         rest_of_space
     }
 
@@ -124,9 +124,7 @@ impl Leaf {
             self.page.bytes[starting_offset + (value_size as usize)] = byte;
             value_size += 1;
         }
-        let value_size_bytes = value_size.to_le_bytes();
-        self.page.bytes[starting_offset - 2] = value_size_bytes[0];
-        self.page.bytes[starting_offset - 1] = value_size_bytes[1];
+        self.page.set_u16_bytes(starting_offset - 2, value_size);
 
         self.set_end_of_free_space((starting_offset - 2) as u16);
     }
@@ -134,28 +132,24 @@ impl Leaf {
     fn add_pointer(&mut self, key: u16) {
         let offset = self.find_offset_of_new_pointer(key);
         let end_of_free_space = self.end_of_free_space();
-        let bytes = end_of_free_space.to_le_bytes();
+        
         let start_of_free_space = self.start_of_free_space() as usize;
 
         if offset < self.start_of_free_space() as usize {
             self.page.bytes.copy_within(offset..start_of_free_space, offset + 2);
         }
-        
-        self.page.bytes[offset] = bytes[0];
-        self.page.bytes[offset + 1] = bytes[1];
+
+        self.page.set_u16_bytes(offset, end_of_free_space);
     }
 
     fn find_offset_of_new_pointer(&self, key: u16) -> usize {
         let length_of_header = 4;
-        println!("key: {:?}", key);
         let mut i = 0;
         for c in self.pointers() {
             let resolved_key = self.resolve_key(c.0 as usize);
             if resolved_key > key {
-                // println!("insert point");
                 return length_of_header + 2 * i as usize;
             }
-            println!("resolve_key: {:?}", resolved_key);
             i += 1;
         }
 
@@ -185,15 +179,11 @@ impl Leaf {
     }
 
     fn set_number_of_pointer(&mut self, number: u16) {
-        let bytes = number.to_le_bytes();
-        self.page.bytes[0] = bytes[0];
-        self.page.bytes[1] = bytes[1];
+        self.page.set_u16_bytes(0, number);
     }
 
     fn set_end_of_free_space(&mut self, number: u16) {
-        let bytes = number.to_le_bytes();
-        self.page.bytes[2] = bytes[0];
-        self.page.bytes[3] = bytes[1];
+        self.page.set_u16_bytes(2, number);
     }
 
     fn pointers<'a>(&self) -> &'a [Pointer] {

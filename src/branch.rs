@@ -28,19 +28,29 @@ impl Branch {
 
     pub fn search(&self, _searching_key: u16) -> Result<u16, Error> {
         let next_pointer = self.max_pointer();
+        // dbg!(next_pointer);
         Ok(next_pointer)
         // Err(Error::NotFound)
     }
 
     pub fn set_max_pointer(&mut self, number: u16) {
-        let bytes = number.to_le_bytes();
-        self.page.bytes[4] = bytes[0];
-        self.page.bytes[5] = bytes[1];
+        self.page.set_u16_bytes(4, number);
     }
 
     pub fn max_pointer(&self) -> u16 {
         let header = self.header();
         header.max_pointer
+    }
+
+    pub fn add_pointer(&mut self) {
+        let _end_of_free_space = self.end_of_free_space();
+        let offset = 8;
+        self.page.set_u16_bytes(offset, 23);
+    }
+
+    fn end_of_free_space(&self) -> u16 {
+        let header = self.header();
+        header.end_of_free_space
     }
 
     fn header(&self) -> Header {

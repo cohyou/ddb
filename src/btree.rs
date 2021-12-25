@@ -8,6 +8,7 @@ use crate::{
 #[derive(Debug)]
 pub struct BTree {
     root: Branch,
+    branches: Vec<Branch>,
     leaves: Vec<Leaf>,
 }
 
@@ -19,7 +20,7 @@ impl BTree {
         let mut leaf = Leaf::new();
         let _ = leaf.page.load();
 
-        BTree { root: root, leaves: vec![leaf] }
+        BTree { root: root, branches: vec![], leaves: vec![leaf] }
     }
 
     pub fn add(&mut self, key: u16, value: String) {
@@ -28,13 +29,16 @@ impl BTree {
             let _ = self.leaves[leaf_index].add(key, value);
             let _ = self.leaves[leaf_index].page.save();
         } else {
-            self.add_branch();
+            let branch = self.get_target_branch_mut(key);
+            branch.add_pointer();
+            // self.add_branch();
         }
     }
 
     pub fn search(&self, key: u16) -> Result<String, Error> {
         let leaf_index = self.search_internal(key)?;
         let leaf = self.leaf(leaf_index);
+        // println!("leaf: {:?}", leaf);
         if let Some(leaf) = leaf {
             leaf.search(key)
         } else {
@@ -53,16 +57,21 @@ impl BTree {
         Ok(next_pointer)
     }
 
+    fn get_target_branch_mut<'a>(&'a mut self, _key: u16) -> &'a mut Branch {
+        &mut self.root
+    }
+
     fn get_target_leaf_index(&self, _key: u16) -> u16 {
         0
     }
 
-    fn add_branch(&mut self) {
-        println!("can not add");
-    }
+    // fn add_branch(&mut self) {
+    //     println!("can not add");
+    // }
 
     fn leaf<'a>(&'a self, pointer: u16) -> Option<&'a Leaf> {
-        self.leaves.get(pointer as usize)
+        let leaf_index = pointer - 1;
+        self.leaves.get(leaf_index as usize)
     }
 }
 
