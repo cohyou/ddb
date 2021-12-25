@@ -28,13 +28,15 @@ impl Branch {
 
     pub fn search(&self, _searching_key: u16) -> Result<u16, Error> {
         let next_pointer = self.max_pointer();
-        // dbg!(next_pointer);
         Ok(next_pointer)
-        // Err(Error::NotFound)
     }
 
     pub fn set_max_pointer(&mut self, number: u16) {
         self.page.set_u16_bytes(4, number);
+    }
+
+    pub fn add(&mut self) {
+        self.add_pointer();
     }
 
     pub fn max_pointer(&self) -> u16 {
@@ -42,7 +44,7 @@ impl Branch {
         header.max_pointer
     }
 
-    pub fn add_pointer(&mut self) {
+    fn add_pointer(&mut self) {
         let _end_of_free_space = self.end_of_free_space();
         let offset = 8;
         self.page.set_u16_bytes(offset, 23);

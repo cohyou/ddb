@@ -29,16 +29,15 @@ impl BTree {
             let _ = self.leaves[leaf_index].add(key, value);
             let _ = self.leaves[leaf_index].page.save();
         } else {
-            let branch = self.get_target_branch_mut(key);
-            branch.add_pointer();
-            // self.add_branch();
+            println!("can not add");
+            self.add_branch(key);
         }
     }
 
     pub fn search(&self, key: u16) -> Result<String, Error> {
         let leaf_index = self.search_internal(key)?;
         let leaf = self.leaf(leaf_index);
-        // println!("leaf: {:?}", leaf);
+
         if let Some(leaf) = leaf {
             leaf.search(key)
         } else {
@@ -65,9 +64,10 @@ impl BTree {
         0
     }
 
-    // fn add_branch(&mut self) {
-    //     println!("can not add");
-    // }
+    fn add_branch(&mut self, key: u16) {        
+        let branch = self.get_target_branch_mut(key);
+        branch.add()
+    }
 
     fn leaf<'a>(&'a self, pointer: u16) -> Option<&'a Leaf> {
         let leaf_index = pointer - 1;

@@ -39,7 +39,7 @@ impl Leaf {
 
     pub fn add(&mut self, key: u16, value: String) -> Result<(), Error> {
         if !self.can_add(value.len() as u16) { return Err(Error::FullLeaf) }
-        self.set_value(value);
+        self.add_value(value);
         self.set_key(key);
         self.add_pointer(key);
         self.increment_number_of_pointer();
@@ -114,7 +114,7 @@ impl Leaf {
         self.set_end_of_free_space((end_of_free_space - n) as u16);
     }
 
-    fn set_value(&mut self, value: String) {
+    fn add_value(&mut self, value: String) {
         let len = value.len();
         let end_of_free_space = self.end_of_free_space() as usize;
         let bytes = value.bytes();
