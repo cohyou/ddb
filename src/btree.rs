@@ -25,7 +25,7 @@ impl BTree {
     pub fn add(&mut self, key: u16, value: String) {
         let leaf_index = self.get_target_leaf_index(key) as usize;
         if self.leaves[leaf_index].can_add(value.len() as u16) {
-            self.leaves[leaf_index].add(key, value);
+            let _ = self.leaves[leaf_index].add(key, value);
             let _ = self.leaves[leaf_index].page.save();
         } else {
             self.add_branch();
@@ -42,11 +42,11 @@ impl BTree {
         }
     }
 
-    // pub fn list(&self) -> Vec<u16> {
-    //     let leaf = &self.leaves[0];
-    //     println!("leaf.pointers: {:?}", leaf.pointers());
-    //     vec![]
-    // }
+    pub fn list(&self) -> Vec<u16> {
+        let leaf = &self.leaves[0];
+        println!("leaf.pointers: {:?}", leaf.list());
+        vec![]
+    }
 
     fn search_internal(&self, key: u16) -> Result<u16, Error>  {
         let next_pointer = self.root.search(key)?;

@@ -24,7 +24,7 @@ struct Header {
 }
 
 #[repr(C)]
-#[derive(Debug, PartialEq, Clone)]
+#[derive(Debug, PartialEq, Clone, Copy)]
 struct Pointer(pub u16);
 
 
@@ -37,11 +37,13 @@ impl Leaf {
         Leaf { page: page }
     }
 
-    pub fn add(&mut self, key: u16, value: String) {
+    pub fn add(&mut self, key: u16, value: String) -> Result<(), Error> {
+        if !self.can_add(value.len() as u16) { return Err(Error::FullLeaf) }
         self.set_value(value);
         self.set_key(key);
-        self.add_pointer();
-        self.increment_number_of_pointer();   
+        self.add_pointer(key);
+        self.increment_number_of_pointer();
+        Ok(())
     }
 
     pub fn search(&self, searching_key: u16) -> Result<String, Error> {
@@ -53,11 +55,7 @@ impl Leaf {
             // println!("{:?}", key_bytes);
             let key = u16::from_le_bytes(key_bytes.try_into().expect("search"));
             if key == searching_key {
-                let value_offset = offset + 4;
-                let value_size_bytes = &self.page.bytes[offset+2..offset+4];
-                let value_size = u16::from_le_bytes(value_size_bytes.try_into().expect(""));
-                let value_bytes = self.page.bytes[value_offset..value_offset + value_size as usize].to_vec();
-                let value = unsafe { String::from_utf8_unchecked(value_bytes) };
+                let value = self.resolve_value(offset);
                 return Ok(value);
             }
         }
@@ -66,22 +64,41 @@ impl Leaf {
 
     pub fn can_add(&self, value_length: u16) -> bool {
         let rest_of_space = self.rest_of_space();
-        println!("2 + 2 + 2 + value_length: {:?} rest_of_space: {:?}", 2 + 2 + 2 + value_length, rest_of_space);
+        // println!("2 + 2 + 2 + value_length: {:?} rest_of_space: {:?}", 2 + 2 + 2 + value_length, rest_of_space);
         // pointer 2
         // key 2
         // value_length 2
         2 + 2 + 2 + value_length <= rest_of_space
     }
 
-    pub fn list(&self) -> Vec<Pointer> {
-        self.pointers().to_vec()
+    pub fn list(&self) -> Vec<u16> {
+        // self.pointers().map(|pointer| pointer)
+        let mut keys = vec![];
+        for pointer in self.pointers() {
+            let Pointer(p) = pointer;
+            keys.push(self.resolve_key(p.clone() as usize));
+        }
+        keys
+    }
+
+    fn resolve_key(&self, offset: usize) -> u16 {
+        let key_bytes = &self.page.bytes[offset..offset+2];
+        u16::from_le_bytes(key_bytes.try_into().expect("resolve_key"))
+    }
+
+    fn resolve_value(&self, offset: usize) -> String {
+        let value_offset = offset + 4;
+        let value_size_bytes = &self.page.bytes[offset+2..offset+4];
+        let value_size = u16::from_le_bytes(value_size_bytes.try_into().expect("resolve_value"));
+        let value_bytes = self.page.bytes[value_offset..value_offset + value_size as usize].to_vec();
+        unsafe { String::from_utf8_unchecked(value_bytes) }
     }
 
     fn rest_of_space(&self) -> u16 {
         let end = self.end_of_free_space();
         let free_space_count = 4 + 2 * self.number_of_pointer();
         let rest_of_space = end - free_space_count;
-        println!("end: {:?} free_space_count: {:?}", end, free_space_count);
+        // println!("end: {:?} free_space_count: {:?}", end, free_space_count);
         rest_of_space
     }
 
@@ -114,14 +131,41 @@ impl Leaf {
         self.set_end_of_free_space((starting_offset - 2) as u16);
     }
 
-    fn add_pointer(&mut self) {
-        let number_of_pointer = self.number_of_pointer();
-        let length_of_header = 4;
-        let offset = length_of_header + 2 * number_of_pointer;
+    fn add_pointer(&mut self, key: u16) {
+        let offset = self.find_offset_of_new_pointer(key);
         let end_of_free_space = self.end_of_free_space();
         let bytes = end_of_free_space.to_le_bytes();
-        self.page.bytes[offset as usize] = bytes[0];
-        self.page.bytes[(offset+1) as usize] = bytes[1];
+        let start_of_free_space = self.start_of_free_space() as usize;
+
+        if offset < self.start_of_free_space() as usize {
+            self.page.bytes.copy_within(offset..start_of_free_space, offset + 2);
+        }
+        
+        self.page.bytes[offset] = bytes[0];
+        self.page.bytes[offset + 1] = bytes[1];
+    }
+
+    fn find_offset_of_new_pointer(&self, key: u16) -> usize {
+        let length_of_header = 4;
+        println!("key: {:?}", key);
+        let mut i = 0;
+        for c in self.pointers() {
+            let resolved_key = self.resolve_key(c.0 as usize);
+            if resolved_key > key {
+                // println!("insert point");
+                return length_of_header + 2 * i as usize;
+            }
+            println!("resolve_key: {:?}", resolved_key);
+            i += 1;
+        }
+
+        self.start_of_free_space() as usize
+    }
+
+    fn start_of_free_space(&self) -> u16 {
+        let length_of_header = 4;
+        let number_of_pointer = self.number_of_pointer();
+        length_of_header + 2 * number_of_pointer
     }
 
     fn increment_number_of_pointer(&mut self) {
@@ -175,10 +219,10 @@ fn test() {
     let mut leaf = Leaf::new();
     let _ = leaf.page.load();
 
-    leaf.add(13, "abc".to_string());
-    leaf.add(2000, "defg".to_string());
-    leaf.add(200, "こんにちは".to_string());
-    leaf.add(8976, "ありがとう".to_string());
+    let _ = leaf.add(13, "abc".to_string());
+    let _ = leaf.add(2000, "defg".to_string());
+    let _ = leaf.add(200, "こんにちは".to_string());
+    let _ = leaf.add(8976, "ありがとう".to_string());
 
     let res = leaf.search(13);
     println!("search 13: {:?}", res);
@@ -199,10 +243,10 @@ fn test() {
 fn test2() {
     let mut leaf = Leaf::new();
 
-    leaf.add(13, "abc".to_string());
-    leaf.add(2000, "defg".to_string());
-    leaf.add(200, "こんにちは".to_string());
-    leaf.add(8976, "ありがとう".to_string());
-
-    assert_eq!(leaf.list(), vec![Pointer(13), Pointer(200), Pointer(2000), Pointer(8976)]);
+    let _ = leaf.add(13, "abc".to_string());
+    let _ = leaf.add(2000, "defg".to_string());
+    let _ = leaf.add(200, "こんにちは".to_string());
+    let _ = leaf.add(8976, "ありがと".to_string());
+    println!("leaf: {:?}", leaf);
+    assert_eq!(leaf.list(), vec![13, 200, 2000, 8976]);
 }
