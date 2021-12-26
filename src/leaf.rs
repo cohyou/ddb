@@ -40,7 +40,7 @@ impl Leaf {
     pub fn add(&mut self, key: u16, value: String) -> Result<(), Error> {
         if !self.can_add(value.len() as u16) { return Err(Error::FullLeaf) }
         self.add_value(value);
-        self.set_key(key);
+        self.add_key(key);
         self.add_pointer(key);
         self.increment_number_of_pointer();
         Ok(())
@@ -102,31 +102,22 @@ impl Leaf {
         rest_of_space
     }
 
-    fn set_key(&mut self, key: u16) {
+    fn add_key(&mut self, key: u16) {
         let len = 2;
         let end_of_free_space = self.end_of_free_space() as usize;
-        let bytes = key.to_le_bytes();
-        let mut n = 0;
-        for byte in bytes.iter() {
-            self.page.bytes[end_of_free_space - len + n] = byte.clone();
-            n += 1;
-        }
-        self.set_end_of_free_space((end_of_free_space - n) as u16);
+        
+        self.page.set_u16_bytes(end_of_free_space - len, key);
+        self.set_end_of_free_space((end_of_free_space - len) as u16);
     }
 
     fn add_value(&mut self, value: String) {
-        let len = value.len();
         let end_of_free_space = self.end_of_free_space() as usize;
-        let bytes = value.bytes();
-        let mut value_size: u16 = 0;
-        let starting_offset = end_of_free_space - len;
-        for byte in bytes {
-            self.page.bytes[starting_offset + (value_size as usize)] = byte;
-            value_size += 1;
-        }
-        self.page.set_u16_bytes(starting_offset - 2, value_size);
+        let len = value.len();
+        let offset = end_of_free_space - len;
 
-        self.set_end_of_free_space((starting_offset - 2) as u16);
+        self.page.set_string_bytes(offset, value);
+        self.page.set_u16_bytes(offset - 2, len as u16);
+        self.set_end_of_free_space((offset - 2) as u16);
     }
 
     fn add_pointer(&mut self, key: u16) {

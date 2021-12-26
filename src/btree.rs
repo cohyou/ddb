@@ -4,6 +4,9 @@ use crate::{
     branch::Branch,
 };
 
+#[allow(dead_code)]
+enum NodeType { Leaf, Branch, }
+
 #[repr(C)]
 #[derive(Debug)]
 pub struct BTree {
@@ -66,7 +69,7 @@ impl BTree {
 
     fn add_branch(&mut self, key: u16) {        
         let branch = self.get_target_branch_mut(key);
-        branch.add()
+        branch.add(key)
     }
 
     fn leaf<'a>(&'a self, pointer: u16) -> Option<&'a Leaf> {
@@ -82,7 +85,7 @@ fn test() {
 }
 
 #[test]
-fn test2() {
+fn test_new_branch() {
     let mut btree = BTree::new();
     assert_eq!(btree.root.max_pointer(), 1);
 
@@ -92,16 +95,16 @@ fn test2() {
     btree.add(8976, "ありがと".to_string());
     btree.add(6, "ぽ".to_string());
 
-    let res = btree.search(13);
-    println!("search 13: {:?}", res);
-    let res = btree.search(2000);
-    println!("search 2000: {:?}", res);
-    let res = btree.search(200);
-    println!("search 200: {:?}", res);
-    let res = btree.search(8976);
-    println!("search 8976: {:?}", res);
-    let res = btree.search(6);
-    println!("search 6: {:?}", res);
+    // let res = btree.search(13);
+    // println!("search 13: {:?}", res);
+    // let res = btree.search(2000);
+    // println!("search 2000: {:?}", res);
+    // let res = btree.search(200);
+    // println!("search 200: {:?}", res);
+    // let res = btree.search(8976);
+    // println!("search 8976: {:?}", res);
+    // let res = btree.search(6);
+    // println!("search 6: {:?}", res);
 
     println!("leaf: {:?}", btree);
 }

@@ -29,10 +29,16 @@ impl Page {
     }
 
     pub fn set_u16_bytes(&mut self, offset: usize, value: u16) {
-        let value_size = std::mem::size_of::<u16>();
         let bytes = value.to_le_bytes();
-        for i in 0..value_size {
-            self.bytes[offset + i] = bytes[i]
+        for (i, byte) in bytes.iter().enumerate() {
+            self.bytes[offset + i] = byte.clone()
+        }
+    }
+
+    pub fn set_string_bytes(&mut self, offset: usize, value: String) {
+        let bytes = value.bytes();
+        for (i, byte) in bytes.enumerate() {
+            self.bytes[offset + i] = byte
         }
     }
 }
