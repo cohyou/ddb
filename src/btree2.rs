@@ -3,12 +3,12 @@ struct Node { page_id: u16, page: Page }
 struct RootNode(Node);
 struct BranchNode(Node);
 struct LeafNode(Node);
-struct BTree { max_page_id: u16, root: Node }
+struct BTree { next_page_id: u16, root: Node }
 
 impl BTree {
     pub fn new() -> Self {
         let root = Node::new(0);
-        BTree { max_page_id: 0, root: root}
+        BTree { next_page_id: 1, root: root }
     }
 }
 
@@ -25,8 +25,8 @@ impl Page {
 
     fn write(page_id: u16) {
         let file_name = "f";
-        let mut f = OpenOptions::new().write(true).create(true).open(file_name)?;
-        f.write_all(self.0.as_ref())
+        let mut file = OpenOptions::new().write(true).create(true).open(file_name)?;
+        file.write_all(self.0.as_ref())
     }
 }
 
