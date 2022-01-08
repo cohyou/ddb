@@ -30,12 +30,61 @@ impl Storage {
         .open(file_path).unwrap()
     }
 
-    fn allocate_page(&mut self) -> u16 {
+    fn allocate_page(&mut self) -> Page {
         let id = self.next_page_id;
         self.next_page_id += 1;
-        id
+        Page::new(id)
     }
 }
+
+#[cfg(test)]
+mod test {
+    use std::fs::OpenOptions;
+    use std::fs::remove_file;
+    use std::io::Write;
+
+    use crate::storage::Storage;
+    use crate::storage::PAGE_SIZE;
+
+    #[test]
+    fn test_from_path_zero() {
+        let temp_file_path = "tmp0";
+        let storage = Storage::from_path(temp_file_path);
+        assert_eq!(storage.next_page_id, 0);
+        let _ = remove_file(temp_file_path);
+    }
+
+    #[test]
+    fn test_from_path_single_page() {
+        let temp_file_path = "tmp1";
+        let mut f = OpenOptions::new()
+            .write(true).truncate(true).create(true)
+            .open(temp_file_path).unwrap();
+        let bytes = [0; PAGE_SIZE];
+        let _ = f.write_all(&bytes);
+        let storage = Storage::from_path(temp_file_path);
+        assert_eq!(storage.next_page_id, 1);
+        let _ = remove_file(temp_file_path);
+    }
+
+    #[test]
+    fn test_from_path_multi_page() {
+        let page_count = 475u16;
+        let bytes_count = PAGE_SIZE * page_count as usize;
+        let temp_file_path = "tmp_n";
+        let mut f = OpenOptions::new()
+            .write(true).truncate(true).create(true)
+            .open(temp_file_path).unwrap();
+        let mut bytes = Vec::with_capacity(bytes_count);
+        // bytes.fill(Default::default());
+        bytes.extend(std::iter::repeat(0).take(bytes_count));
+        let _ = f.write_all(&bytes);
+        let storage = Storage::from_path(temp_file_path);
+        assert_eq!(storage.next_page_id, page_count);
+        let _ = remove_file(temp_file_path);
+    }
+}
+
 
 pub struct Page { id: u16, bytes: [u8; PAGE_SIZE] }
 

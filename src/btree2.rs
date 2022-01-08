@@ -9,15 +9,14 @@ struct Node { page: Page }
 // struct BranchNode(Node);
 // struct LeafNode(Node);
 pub struct BTree {
-    root: Node,
+    root_page_id: Option<u16>,
     storage: RefCell<Storage>,
 }
 
 impl BTree {
     pub fn create(file_path: impl AsRef<Path>) -> Self {
         let storage = Storage::from_path(file_path);
-        let root = Node::new(0);
-        BTree { root: root, storage: RefCell::new(storage) }
+        BTree { root_page_id: Default::default(), storage: RefCell::new(storage) }
     }
 
     pub fn insert<K, V>(&self, key: K, value: V) {
