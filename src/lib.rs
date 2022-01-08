@@ -1,5 +1,5 @@
 // mod page;
-// mod error;
+mod error;
 // mod branch;
 // mod leaf;
 // mod btree;
@@ -7,6 +7,6 @@
 // pub use btree::*;
 
 mod storage;
-mod btree2;
+mod btree;
 
-pub use btree2::*;
+pub use btree::*;
