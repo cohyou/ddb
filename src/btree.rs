@@ -5,6 +5,8 @@ use crate::node::Leaf;
 use crate::node::Node;
 use crate::node::Slot;
 use crate::node::SlotBytes;
+use crate::node::NodeType;
+use crate::page::Page;
 use crate::storage::Storage;
 
 
@@ -31,22 +33,41 @@ impl BTree {
         K: SlotBytes + Clone,
         V: SlotBytes + Clone,
     {
-        if let Some(_root_page_id) = self.root_page_id {
+        if let Some(root_page_id) = self.root_page_id {
+            let mut node = self.read_node(root_page_id);
+            match node.node_type() {
+                NodeType::Leaf => {
+                    let slot = Slot::new(key, value);
+                    node.add(&slot);
+                    let mut leaf = Leaf::new(node);
+                    self.write_leaf(&mut leaf);
+                },
+                NodeType::Branch => {},
+            }
         } else {
             let mut leaf = self.create_leaf();
             let slot = Slot::new(key, value);
-            leaf.node.add_slot(&slot);
+            leaf.node.add(&slot);
             self.write_leaf(&mut leaf);
+            self.root_page_id = Some(0);
         }
     }
 
     fn create_leaf(&self) -> Leaf {
         let page = self.storage.borrow_mut().allocate_page();
-        Leaf { node: Node::new(page) }
+        let mut node = Node::create(page);
+        node.set_node_type(NodeType::Leaf);
+        Leaf { node: node }
     }
 
     fn write_leaf(&self, leaf: &mut Leaf) {
         self.storage.borrow_mut().write_page(&mut leaf.node.page);
+    }
+
+    fn read_node(&self, page_id: u16) -> Node {
+        let mut page = Page::new(page_id);
+        self.storage.borrow_mut().read_page(&mut page);
+        Node::new(page)
     }
 
     // fn root_page_id(&self) -> u16 { self.root_page_id.unwrap() }
@@ -58,6 +79,8 @@ mod test {
     use std::fs::remove_file;
     
     use std::io::Read;
+
+    use std::path::Path;
 
     use crate::btree::BTree;
     use crate::error::Error;
@@ -84,23 +107,47 @@ mod test {
             .open(p).unwrap();
         let mut buf = Vec::with_capacity(PAGE_SIZE);
         let _ = f.read_to_end(&mut buf);
+        
+        let res = file_bytes(p);
+
         let slot_len = key.to_le_bytes().len() + value.len() + 3;
-        let res = format!("{:?}", &buf[PAGE_SIZE - slot_len..PAGE_SIZE]);
+        let res = &res[PAGE_SIZE - slot_len..PAGE_SIZE];
+
         let _ = remove_file(p);
-        assert_eq!(res, "[1, 123, 3, 0, 97, 98, 99]"); 
+        assert_eq!(res, [1, 123, 3, 0, 97, 98, 99]); 
     }
 
-    // #[test]
-    // fn test_insert_multi() {
-    //     let p = "test_insert_multi";
-    //     let mut btree = BTree::create(p);
-    //     btree.insert(13u32, "abc");
-    //     btree.insert(2000u32, "defg");
-    //     btree.insert(200u32, "こんにちは");
-    //     btree.insert(8976u32, "ありがと");
-    //     btree.insert(6u32, "ぽ");
-    //     let _ = remove_file(p);
-    // }
+    #[test]
+    fn test_insert_multi() {
+        let p = "test_insert_multi";
+        let mut btree = BTree::create(p);
+        btree.insert(13u16, "abc");
+        btree.insert(8976u16, "ありがと");
+        let res = file_bytes(p);
+        let _ = remove_file(p);
+        assert_eq!(res, [2, 0, 39, 0, 0, 0, 0, 0, 56, 0, 39, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 16, 35, 12, 0, 227, 129, 130, 227, 130, 138, 227, 129, 140, 227, 129, 168, 2, 13, 0, 3, 0, 97, 98, 99]); 
+    }
+
+    #[test]
+    fn test_insert_split() {
+        let p = "test_insert_split";
+        let mut btree = BTree::create(p);
+        btree.insert(13u16, "abc");
+        btree.insert(2000u32, "defg");
+        btree.insert(8976u16, "ありがと");
+        btree.insert(7u16, "ぽぽ");
+        let res = file_bytes(p);
+        let _ = remove_file(p);
+        assert_eq!(res, []); 
+    }
+
+    fn file_bytes(path: impl AsRef<Path>) -> Vec<u8> {
+        let mut f = OpenOptions::new()
+            .read(true).write(true)
+            .open(path).unwrap();
+        let mut buf = Vec::with_capacity(PAGE_SIZE);
+        let _ = f.read_to_end(&mut buf);
+        buf
+    }
 }
 
-// enum NodeType { Leaf, Branch, }

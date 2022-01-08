@@ -26,6 +26,10 @@ impl Storage {
         let _ = page.write(&mut self.file);
     }
 
+    pub fn read_page(&mut self, page: &mut Page) {
+        let _ = page.read(&mut self.file);
+    }
+
     fn open_file(file_path: impl AsRef<Path>) -> File { 
         OpenOptions::new()
         .read(true)

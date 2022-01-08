@@ -1,6 +1,6 @@
 use std::convert::TryInto;
 use std::io;
-// use std::io::Read;
+use std::io::Read;
 use std::io::Seek;
 use std::io::SeekFrom;
 use std::io::Write;
@@ -39,12 +39,11 @@ impl Page {
     //     self.bytes = bytes;
     // }
 
-
-    // fn read(&mut self, file: &mut File) -> io::Result<()> {
-    //     let offset = PAGE_SIZE as u64 * self.id as u64;
-    //     file.seek(SeekFrom::Start(offset))?;
-    //     file.read_exact(&mut self.bytes)
-    // }
+    pub fn read(&mut self, file: &mut File) -> io::Result<()> {
+        let offset = PAGE_SIZE as u64 * self.id as u64;
+        file.seek(SeekFrom::Start(offset))?;
+        file.read_exact(&mut self.bytes)
+    }
 
     pub fn write(&mut self, file: &mut File) -> io::Result<()> {
         let offset = PAGE_SIZE as u64 * self.id as u64;
