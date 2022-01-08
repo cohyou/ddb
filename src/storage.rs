@@ -1,16 +1,10 @@
 use std::fs::File;
 use std::fs::OpenOptions;
-
-use std::io;
-use std::io::Read;
-use std::io::Seek;
-use std::io::SeekFrom;
-use std::io::Write;
-
 use std::path::Path;
 
+use crate::page::PAGE_SIZE;
+use crate::page::Page;
 
-const PAGE_SIZE: usize = 64;
 
 pub struct Storage { next_page_id: u16, file: File }
 
@@ -22,18 +16,22 @@ impl Storage {
         Storage { next_page_id: next_page_id as u16, file: file }
     }
     
+    pub fn allocate_page(&mut self) -> Page {
+        let id = self.next_page_id;
+        self.next_page_id += 1;
+        Page::new(id)
+    }
+
+    pub fn write_page(&mut self, page: &mut Page) {
+        let _ = page.write(&mut self.file);
+    }
+
     fn open_file(file_path: impl AsRef<Path>) -> File { 
         OpenOptions::new()
         .read(true)
         .write(true)
         .create(true)
         .open(file_path).unwrap()
-    }
-
-    fn allocate_page(&mut self) -> Page {
-        let id = self.next_page_id;
-        self.next_page_id += 1;
-        Page::new(id)
     }
 }
 
@@ -48,23 +46,23 @@ mod test {
 
     #[test]
     fn test_from_path_zero() {
-        let temp_file_path = "tmp0";
+        let temp_file_path = "test_from_path_zero";
         let storage = Storage::from_path(temp_file_path);
-        assert_eq!(storage.next_page_id, 0);
         let _ = remove_file(temp_file_path);
+        assert_eq!(storage.next_page_id, 0);
     }
 
     #[test]
     fn test_from_path_single_page() {
-        let temp_file_path = "tmp1";
+        let temp_file_path = "test_from_path_single_page";
         let mut f = OpenOptions::new()
             .write(true).truncate(true).create(true)
             .open(temp_file_path).unwrap();
         let bytes = [0; PAGE_SIZE];
         let _ = f.write_all(&bytes);
         let storage = Storage::from_path(temp_file_path);
-        assert_eq!(storage.next_page_id, 1);
         let _ = remove_file(temp_file_path);
+        assert_eq!(storage.next_page_id, 1);
     }
 
     #[test]
@@ -76,7 +74,6 @@ mod test {
             .write(true).truncate(true).create(true)
             .open(temp_file_path).unwrap();
         let mut bytes = Vec::with_capacity(bytes_count);
-        // bytes.fill(Default::default());
         bytes.extend(std::iter::repeat(0).take(bytes_count));
         let _ = f.write_all(&bytes);
         let storage = Storage::from_path(temp_file_path);
@@ -85,23 +82,3 @@ mod test {
     }
 }
 
-
-pub struct Page { id: u16, bytes: [u8; PAGE_SIZE] }
-
-impl Page {
-    pub fn new(id: u16) -> Self {
-        Page { id: id, bytes: [0; PAGE_SIZE] }
-    }
-
-    fn read(&mut self, mut file: File) -> io::Result<()> {
-        let offset = PAGE_SIZE as u64 * self.id as u64;
-        file.seek(SeekFrom::Start(offset))?;
-        file.read_exact(&mut self.bytes)
-    }
-
-    fn write(&mut self, mut file: File) -> io::Result<()> {
-        let offset = PAGE_SIZE as u64 * self.id as u64;
-        file.seek(SeekFrom::Start(offset))?;
-        file.write_all(&self.bytes)
-    }
-}

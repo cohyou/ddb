@@ -1,31 +1,20 @@
+use std::convert::TryInto;
+use std::io;
+// use std::io::Read;
+use std::io::Seek;
+use std::io::SeekFrom;
 use std::io::Write;
 use std::fs::File;
-use std::io::Read;
-use std::fs::OpenOptions;
 
-pub const LEN_PAGE: u16 = 64;
+pub const PAGE_SIZE: usize = 64;
 
-#[repr(C)]
+
 #[derive(Debug)]
-pub struct Page {
-    pub bytes: [u8; LEN_PAGE as usize]
-}
+pub struct Page { id: u16, bytes: [u8; PAGE_SIZE] }
 
 impl Page {
-    pub fn new() -> Self {
-        let bytes = [0; LEN_PAGE as usize];
-        Page { bytes: bytes }
-    }
-
-    pub fn save(&self) -> std::io::Result<()> {
-        let mut f = OpenOptions::new().truncate(true).open("f")?;
-        f.write_all(self.bytes.as_ref())
-    }
-
-    pub fn load(&mut self) -> std::io::Result<()> {
-        let mut f = File::open("f")?;
-        f.read(self.bytes.as_mut())?;
-        Ok(())
+    pub fn new(id: u16) -> Self {
+        Page { id: id, bytes: [0; PAGE_SIZE] }
     }
 
     pub fn set_u16_bytes(&mut self, offset: usize, value: u16) {
@@ -35,16 +24,31 @@ impl Page {
         }
     }
 
-    pub fn set_string_bytes(&mut self, offset: usize, value: String) {
-        let bytes = value.bytes();
-        for (i, byte) in bytes.enumerate() {
-            self.bytes[offset + i] = byte
+    pub fn u16_bytes(&self, offset: usize) -> u16 {
+        let bytes = &self.bytes[offset..offset + 2];
+        u16::from_le_bytes(bytes.try_into().unwrap())
+    }
+
+    pub fn set_bytes<'a>(&mut self, offset: usize, bytes: Vec<u8>) {
+        for (i, byte) in bytes.into_iter().enumerate() {
+            self.bytes[offset + i] = byte.clone();
         }
     }
-}
 
-#[test]
-fn test() {
-    let s = std::mem::size_of::<u16>();
-    assert_eq!(s, 1);
+    // fn set(&mut self, bytes: [u8; PAGE_SIZE]) {
+    //     self.bytes = bytes;
+    // }
+
+
+    // fn read(&mut self, file: &mut File) -> io::Result<()> {
+    //     let offset = PAGE_SIZE as u64 * self.id as u64;
+    //     file.seek(SeekFrom::Start(offset))?;
+    //     file.read_exact(&mut self.bytes)
+    // }
+
+    pub fn write(&mut self, file: &mut File) -> io::Result<()> {
+        let offset = PAGE_SIZE as u64 * self.id as u64;
+        file.seek(SeekFrom::Start(offset))?;
+        file.write_all(&self.bytes)
+    }
 }
