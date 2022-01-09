@@ -3,17 +3,20 @@ use std::marker::PhantomData;
 
 use crate::page::PAGE_SIZE;
 use crate::page::Page;
+use crate::slot::Slot;
+use crate::slot::SlotBytes;
+use crate::slot::AsKey;
 
 
-pub struct Leaf<K: Ord, V> { pub node: Node<K, V> }
+pub struct Leaf<K: Ord + AsKey, V> { pub node: Node<K, V> }
 
-impl<K: Ord, V> Leaf<K, V> {
+impl<K: Ord + AsKey, V> Leaf<K, V> {
     pub fn new(node: Node<K, V>) -> Self {
         Leaf { node: node }
     }
 }
 
-pub struct Node<K: Ord, V> {
+pub struct Node<K: Ord + AsKey, V> {
     pub page: Page,
     _phantom_key: PhantomData<fn() -> K>,
     _phantom_value: PhantomData<fn() -> V>,
@@ -21,7 +24,7 @@ pub struct Node<K: Ord, V> {
 
 pub enum NodeType { Leaf, Branch, }
 
-impl<K: Ord, V> Node<K, V> {
+impl<K: Ord + AsKey, V> Node<K, V> {
     pub fn new(page: Page) -> Self {
         Node::<K, V> {
             page: page, 
@@ -37,13 +40,32 @@ impl<K: Ord, V> Node<K, V> {
         node
     }
 
-    pub fn add(&mut self, slot: &Slot<K, V>) where 
+    pub fn insert(&mut self, slot: &Slot<K, V>) where
         K: SlotBytes + Clone,
         V: SlotBytes + Clone,
     {
         self.add_slot(&slot);
-        self.add_pointer();
+        self.insert_pointer(&slot.key);
         self.increment_number_of_pointer();
+    }
+
+    fn keys<'a>(&self) -> Vec<K> where K: AsKey {
+        let header_len = 8 as usize;
+        let number_of_pointer = self.number_of_pointer();
+        let offset = header_len + 2 * number_of_pointer as usize;
+        let range = header_len..offset as usize;
+        self.page.bytes[range].chunks(2)
+            .map(|chunk| {
+                let chunk = &chunk[0..2];
+                u16::from_le_bytes(chunk.try_into().unwrap())
+            })
+            .map(|offset| {
+                let key_size = std::mem::size_of::<K>();
+                let offset = offset as usize + key_size - 1;
+                let bytes = &self.page.bytes[offset..offset + 2];
+                K::from_bytes(bytes)
+            })
+            .collect::<Vec<K>>()
     }
 
     fn add_slot(&mut self, slot: &Slot<K, V>) where 
@@ -57,12 +79,22 @@ impl<K: Ord, V> Node<K, V> {
         self.set_end_of_free_space(offset.try_into().unwrap());
     }
 
-    fn add_pointer(&mut self) {
-        let header_len = 8;
-        let number_of_pointer = self.number_of_pointer();
+    fn insert_pointer(&mut self, key: &K) where K: AsKey {
+        let keys = self.keys();
+        let insert_point = 
+            if let Some(p) = keys.iter()
+                .position(|k| key < k ) {
+                p
+            } else {
+                keys.len()
+            };
+        let header_len = 8usize;
+        let number_of_pointer = self.number_of_pointer() as usize;
         let end_of_free_space = self.end_of_free_space();
-        let offset = header_len + 2 * number_of_pointer;
-        self.page.set_u16_bytes(offset.into(), end_of_free_space)
+        let end_offset = header_len + 2 * number_of_pointer;
+        let start_offset = header_len + 2 * insert_point;
+        self.page.bytes.copy_within(start_offset..end_offset, start_offset + 2);
+        self.page.set_u16_bytes(start_offset.into(), end_of_free_space)
     }
 
     fn increment_number_of_pointer(&mut self) {
@@ -102,61 +134,22 @@ impl<K: Ord, V> Node<K, V> {
     }
 }
 
-pub struct Slot<K, V> where
-    K: SlotBytes + Clone,
-    V: SlotBytes + Clone,
-{
-    key: K, value: V
-}
+#[cfg(test)]
+mod test {
+    use crate::node::Node;
+    use crate::page::Page;
+    use crate::slot::Slot;
 
-impl<K, V> Slot<K, V> where
-    K: SlotBytes + Clone,
-    V: SlotBytes + Clone,
-{
-    pub fn new(key: K, value: V) -> Self {
-        Slot { key: key, value: value }
-    }
-
-    fn to_bytes(&self) -> Vec<u8> {
-        let mut key_bytes = self.key.into_bytes().to_vec();
-        let value_bytes = self.value.into_bytes().to_vec();
-        key_bytes.extend(value_bytes);
-        key_bytes
-    }
-}
-
-pub trait SlotBytes {
-    fn into_bytes(&self) -> Vec<u8>;
-}
-
-impl SlotBytes for u8 {
-    fn into_bytes(&self) -> Vec<u8> {
-        vec![1, self.clone()]
-    }
-}
-
-impl SlotBytes for u16 {
-    fn into_bytes(&self) -> Vec<u8> {
-        let mut res = vec![2];
-        res.extend(self.to_le_bytes().to_vec());
-        res
-    }
-}
-
-impl SlotBytes for u32 {
-    fn into_bytes(&self) -> Vec<u8> {
-        let mut res = vec![4];
-        res.extend(self.to_le_bytes().to_vec());
-        res
-    }
-}
-
-impl SlotBytes for &str {
-    fn into_bytes(&self) -> Vec<u8> {
-        let bytes = self.bytes().collect::<Vec<_>>();
-        let len = bytes.len() as u16;
-        let mut res = len.to_le_bytes().to_vec();
-        res.extend(bytes);
-        res
+    #[test]
+    fn test_pointers_sorted() {
+        let page = Page::new(Default::default());
+        let mut node = Node::<u16, &str>::create(page);
+        node.insert(&Slot::new(2u16, "abc"));
+        node.insert(&Slot::new(7u16, "ありがと"));
+        node.insert(&Slot::new(5u16, "defg"));
+        node.insert(&Slot::new(1u16, "ぽぽ"));
+        let pointers = node.keys();
+        println!("{:?}", &node.page);
+        assert_eq!(pointers, [1, 2, 5, 7]);
     }
 }

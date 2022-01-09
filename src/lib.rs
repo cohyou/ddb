@@ -1,6 +1,7 @@
 mod page;
 mod error;
 mod node;
+mod slot;
 // mod branch;
 // mod leaf;
 

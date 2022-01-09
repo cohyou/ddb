@@ -10,7 +10,7 @@ pub const PAGE_SIZE: usize = 64;
 
 
 #[derive(Debug)]
-pub struct Page { id: u16, bytes: [u8; PAGE_SIZE] }
+pub struct Page { id: u16, pub bytes: [u8; PAGE_SIZE] }
 
 impl Page {
     pub fn new(id: u16) -> Self {

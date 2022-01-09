@@ -3,10 +3,11 @@ use std::path::Path;
 use crate::error::Error;
 use crate::node::Leaf;
 use crate::node::Node;
-use crate::node::Slot;
-use crate::node::SlotBytes;
 use crate::node::NodeType;
 use crate::page::Page;
+use crate::slot::AsKey;
+use crate::slot::Slot;
+use crate::slot::SlotBytes;
 use crate::storage::Storage;
 
 
@@ -15,7 +16,7 @@ pub struct BTree<K, V> {
     storage: RefCell<Storage<K, V>>,
 }
 
-impl<K: Ord, V> BTree<K, V> {
+impl<K: Ord + AsKey, V> BTree<K, V> {
     pub fn create(file_path: impl AsRef<Path>) -> Self {
         let storage = Storage::from_path(file_path);
         BTree { root_page_id: Default::default(), storage: RefCell::new(storage) }
@@ -38,7 +39,7 @@ impl<K: Ord, V> BTree<K, V> {
             match node.node_type() {
                 NodeType::Leaf => {
                     let slot = Slot::new(key, value);
-                    node.add(&slot);
+                    node.insert(&slot);
                     let mut leaf = Leaf::new(node);
                     self.write_leaf(&mut leaf);
                 },
@@ -47,7 +48,7 @@ impl<K: Ord, V> BTree<K, V> {
         } else {
             let mut leaf = self.create_leaf();
             let slot = Slot::new(key, value);
-            leaf.node.add(&slot);
+            leaf.node.insert(&slot);
             self.write_leaf(&mut leaf);
             self.root_page_id = Some(0);
         }
