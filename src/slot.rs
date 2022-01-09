@@ -1,4 +1,4 @@
-
+use std::convert::TryInto;
 
 
 pub struct Slot<K, V> where
@@ -26,11 +26,16 @@ impl<K, V> Slot<K, V> where
 
 pub trait SlotBytes {
     fn into_bytes(&self) -> Vec<u8>;
+    fn from_bytes(bytes: &[u8]) -> Self;
 }
 
 impl SlotBytes for u8 {
     fn into_bytes(&self) -> Vec<u8> {
         vec![1, self.clone()]
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Self {
+        bytes[0]
     }
 }
 
@@ -40,6 +45,10 @@ impl SlotBytes for u16 {
         res.extend(self.to_le_bytes().to_vec());
         res
     }
+
+    fn from_bytes(bytes: &[u8]) -> Self {
+        u16::from_le_bytes(bytes.try_into().unwrap())
+    }
 }
 
 impl SlotBytes for u32 {
@@ -48,9 +57,13 @@ impl SlotBytes for u32 {
         res.extend(self.to_le_bytes().to_vec());
         res
     }
+
+    fn from_bytes(_bytes: &[u8]) -> Self {
+        unimplemented!()
+    }
 }
 
-impl SlotBytes for &str {
+impl SlotBytes for String {
     fn into_bytes(&self) -> Vec<u8> {
         let bytes = self.bytes().collect::<Vec<_>>();
         let len = bytes.len() as u16;
@@ -58,24 +71,8 @@ impl SlotBytes for &str {
         res.extend(bytes);
         res
     }
-}
 
-
-use std::convert::TryInto;
-
-
-pub trait AsKey {
-    fn from_bytes(bytes: &[u8]) -> Self;
-}
-
-impl AsKey for u8 {
-    fn from_bytes(bytes: &[u8]) -> Self {
-        bytes[0]
-    }
-}
-
-impl AsKey for u16 {
-    fn from_bytes(bytes: &[u8]) -> Self {
-        u16::from_le_bytes(bytes.try_into().unwrap())
+    fn from_bytes<'a>(bytes: &'a [u8]) -> Self {
+        String::from_utf8(bytes.to_vec()).unwrap()
     }
 }

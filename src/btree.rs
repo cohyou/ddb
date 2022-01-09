@@ -5,7 +5,6 @@ use crate::node::Leaf;
 use crate::node::Node;
 use crate::node::NodeType;
 use crate::page::Page;
-use crate::slot::AsKey;
 use crate::slot::Slot;
 use crate::slot::SlotBytes;
 use crate::storage::Storage;
@@ -16,21 +15,35 @@ pub struct BTree<K, V> {
     storage: RefCell<Storage<K, V>>,
 }
 
-impl<K: Ord + AsKey, V> BTree<K, V> {
+impl<K: Ord + SlotBytes, V> BTree<K, V> {
     pub fn create(file_path: impl AsRef<Path>) -> Self {
         let storage = Storage::from_path(file_path);
         BTree { root_page_id: Default::default(), storage: RefCell::new(storage) }
     }
 
-    pub fn search<T>(&self, _value: T) -> Result<T, Error> {
-        if let Some(_root_page_id) = self.root_page_id {
-            Err(Error::NoPage)
+    pub fn search(&self, key: K) -> Result<V, Error> where 
+        V: SlotBytes
+    {
+        if let Some(root_page_id) = self.root_page_id {
+            let node = self.read_node(root_page_id);
+            match node.node_type() {
+                NodeType::Leaf => {
+                    if let Some(v) = node.search(&key) {
+                        Ok(v)
+                    } else {
+                        Err(Error::NotFound)
+                    }
+                },
+                NodeType::Branch => {
+                    unimplemented!()
+                },
+            }
         } else {
             Err(Error::NoPage)
         }
     }
 
-    pub fn insert(&mut self, key: K, value: V) where 
+    pub fn insert(&mut self, key: K, value: V) where
         K: SlotBytes + Clone,
         V: SlotBytes + Clone,
     {
@@ -90,18 +103,19 @@ mod test {
     #[test]
     fn test_search_empty() {
         let p = "test_search_empty";
-        let btree = BTree::<u16, &str>::create(p);
-        let error: Result<&str, Error> = Err(Error::NoPage);
+        let btree = BTree::<u16, String>::create(p);
+        let error: Result<String, Error> = Err(Error::NoPage);
         let _ = remove_file(p);
-        assert_eq!(btree.search(""), error);
+        assert_eq!(btree.search(0), error);
     }
 
     #[test]
     fn test_insert_first_slot() {
         let key = 123u8;
-        let value = "abc";
+        let value = "abc".to_string();
         let p = "test_insert_first";
         let mut btree = BTree::create(p);
+        let value_len = value.len();
         btree.insert(key, value);
         let mut f = OpenOptions::new()
             .read(true).write(true)
@@ -111,7 +125,7 @@ mod test {
         
         let res = file_bytes(p);
 
-        let slot_len = key.to_le_bytes().len() + value.len() + 3;
+        let slot_len = key.to_le_bytes().len() + value_len + 3;
         let res = &res[PAGE_SIZE - slot_len..PAGE_SIZE];
 
         let _ = remove_file(p);
@@ -122,8 +136,8 @@ mod test {
     fn test_insert_multi() {
         let p = "test_insert_multi";
         let mut btree = BTree::create(p);
-        btree.insert(13u16, "abc");
-        btree.insert(8976u16, "ありがと");
+        btree.insert(13u16, "abc".to_string());
+        btree.insert(8976u16, "ありがと".to_string());
         let res = file_bytes(p);
         let _ = remove_file(p);
         assert_eq!(res, [2, 0, 39, 0, 0, 0, 0, 0, 56, 0, 39, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 16, 35, 12, 0, 227, 129, 130, 227, 130, 138, 227, 129, 140, 227, 129, 168, 2, 13, 0, 3, 0, 97, 98, 99]); 
@@ -133,10 +147,10 @@ mod test {
     fn test_insert_split() {
         let p = "test_insert_split";
         let mut btree = BTree::create(p);
-        btree.insert(13u16, "abc");
-        btree.insert(2000u16, "defg");
-        btree.insert(8976u16, "ありがと");
-        btree.insert(7u16, "ぽぽ");
+        btree.insert(13u16, "abc".to_string());
+        btree.insert(2000u16, "defg".to_string());
+        btree.insert(8976u16, "ありがと".to_string());
+        btree.insert(7u16, "ぽぽ".to_string());
         let res = file_bytes(p);
         let _ = remove_file(p);
         assert_eq!(res, []); 

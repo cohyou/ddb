@@ -6,18 +6,17 @@ use crate::page::PAGE_SIZE;
 use crate::page::Page;
 use crate::slot::Slot;
 use crate::slot::SlotBytes;
-use crate::slot::AsKey;
 
 
-pub struct Leaf<K: Ord + AsKey, V> { pub node: Node<K, V> }
+pub struct Leaf<K: Ord + SlotBytes, V> { pub node: Node<K, V> }
 
-impl<K: Ord + AsKey, V> Leaf<K, V> {
+impl<K: Ord + SlotBytes, V> Leaf<K, V> {
     pub fn new(node: Node<K, V>) -> Self {
         Leaf { node: node }
     }
 }
 
-pub struct Node<K: Ord + AsKey, V> {
+pub struct Node<K: Ord + SlotBytes, V> {
     pub page: Page,
     _phantom_key: PhantomData<fn() -> K>,
     _phantom_value: PhantomData<fn() -> V>,
@@ -25,7 +24,7 @@ pub struct Node<K: Ord + AsKey, V> {
 
 pub enum NodeType { Leaf, Branch, }
 
-impl<K: Ord + AsKey, V> Node<K, V> {
+impl<K: Ord + SlotBytes, V> Node<K, V> {
     pub fn new(page: Page) -> Self {
         Node::<K, V> {
             page: page, 
@@ -54,13 +53,33 @@ impl<K: Ord + AsKey, V> Node<K, V> {
         Ok(())
     }
 
+    pub fn search(&self, key: &K) -> Option<V> where
+        V: SlotBytes
+    {
+        let keys = self.keys();
+        match &keys.binary_search(key) {
+            Ok(index) => {
+                let header_len = 8 as usize;
+                let pointer = header_len + 2 * index;
+                let bytes = &self.page.bytes[pointer..pointer + 2];
+                let offset = u16::from_le_bytes(bytes.try_into().unwrap());
+                let start_of_value = (offset + 3) as usize;
+                let bytes = &self.page.bytes[start_of_value..start_of_value + 2];
+                let len_of_value = u16::from_le_bytes(bytes.try_into().unwrap()) as usize;
+                let start_of_value = start_of_value + std::mem::size_of::<u16>();
+                let bytes = &self.page.bytes[start_of_value..start_of_value + len_of_value];
+                let value = V::from_bytes(bytes);
+                Some(value)
+            },
+            Err(_insertion_point) => None,
+        }
+    }
+
     fn is_full(&self, slot: &Slot<K, V>) -> bool where
         K: SlotBytes + Clone,
         V: SlotBytes + Clone,
     {
-        let header_len = 8 as usize;
-        let number_of_pointer = self.number_of_pointer() + 1;
-        let offset_pointer = header_len + 2 * number_of_pointer as usize;
+        let offset_pointer = self.start_of_free_space();
 
         let bytes = slot.to_bytes();
         let end_of_free_space = self.end_of_free_space() as usize;
@@ -72,10 +91,9 @@ impl<K: Ord + AsKey, V> Node<K, V> {
         offset_slot <= offset_pointer
     }
 
-    fn keys<'a>(&self) -> Vec<K> where K: AsKey {
+    fn keys<'a>(&self) -> Vec<K> where K: SlotBytes {
+        let offset = self.start_of_free_space();
         let header_len = 8 as usize;
-        let number_of_pointer = self.number_of_pointer();
-        let offset = header_len + 2 * number_of_pointer as usize;
         let range = header_len..offset as usize;
         self.page.bytes[range].chunks(2)
             .map(|chunk| {
@@ -91,6 +109,12 @@ impl<K: Ord + AsKey, V> Node<K, V> {
             .collect::<Vec<K>>()
     }
 
+    fn start_of_free_space(&self) -> usize {
+        let header_len = 8 as usize;
+        let number_of_pointer = self.number_of_pointer();
+        header_len + 2 * number_of_pointer as usize
+    }
+
     fn add_slot(&mut self, slot: &Slot<K, V>) where 
         K: SlotBytes + Clone,
         V: SlotBytes + Clone,
@@ -102,7 +126,7 @@ impl<K: Ord + AsKey, V> Node<K, V> {
         self.set_end_of_free_space(offset.try_into().unwrap());
     }
 
-    fn insert_pointer(&mut self, key: &K) where K: AsKey {
+    fn insert_pointer(&mut self, key: &K) where K: SlotBytes {
         let keys = self.keys();
         let insert_point = 
             if let Some(p) = keys.iter()
@@ -167,11 +191,11 @@ mod test {
     #[test]
     fn test_pointers_sorted() {
         let page = Page::new(Default::default());
-        let mut node = Node::<u16, &str>::create(page);
-        let _ = node.insert(&Slot::new(2u16, "abc"));
-        let _ = node.insert(&Slot::new(7u16, "ありがと"));
-        let _ = node.insert(&Slot::new(5u16, "defg"));
-        let _ = node.insert(&Slot::new(1u16, "ぽぽ"));
+        let mut node = Node::<u16, String>::create(page);
+        let _ = node.insert(&Slot::new(2u16, "abc".to_string()));
+        let _ = node.insert(&Slot::new(7u16, "ありがと".to_string()));
+        let _ = node.insert(&Slot::new(5u16, "defg".to_string()));
+        let _ = node.insert(&Slot::new(1u16, "ぽぽ".to_string()));
         let pointers = node.keys();
         println!("{:?}", &node.page);
         assert_eq!(pointers, [1, 2, 5, 7]);
@@ -180,15 +204,31 @@ mod test {
     #[test]
     fn test_pointers_full() {
         let page = Page::new(Default::default());
-        let mut node = Node::<u16, &str>::create(page);
-        let _ = node.insert(&Slot::new(2u16, "abc"));
-        let _ = node.insert(&Slot::new(7u16, "ありがと"));
-        let _ = node.insert(&Slot::new(5u16, "defg"));
-        let _ = node.insert(&Slot::new(1u16, "ぽぽ"));
-        let res = node.insert(&Slot::new(100u16, "あふれちゃう"));
+        let mut node = Node::<u16, String>::create(page);
+        let _ = node.insert(&Slot::new(2u16, "abc".to_string()));
+        let _ = node.insert(&Slot::new(7u16, "ありがと".to_string()));
+        let _ = node.insert(&Slot::new(5u16, "defg".to_string()));
+        let _ = node.insert(&Slot::new(1u16, "ぽぽ".to_string()));
+        let res = node.insert(&Slot::new(100u16, "あふれちゃう".to_string()));
         let pointers = node.keys();
-        println!("{:?}", &node.page);
+        // println!("{:?}", &node.page);
         assert_eq!(pointers, [1, 2, 5, 7]);
         assert_eq!(res, Err(Error::FullLeaf));
+    }
+
+    #[test]
+    fn test_search_hit() {
+        let page = Page::new(Default::default());
+        let mut node = Node::<u16, String>::create(page);
+        let _ = node.insert(&Slot::new(2u16, "abc".to_string()));
+        assert_eq!(node.search(&2u16), Some("abc".to_string()));
+    }
+
+    #[test]
+    fn test_search_notfound() {
+        let page = Page::new(Default::default());
+        let mut node = Node::<u16, String>::create(page);
+        let _ = node.insert(&Slot::new(2u16, "abc".to_string()));
+        assert_eq!(node.search(&5u16), None);
     }
 }
