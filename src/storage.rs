@@ -1,3 +1,4 @@
+use std::marker::PhantomData;
 use std::fs::File;
 use std::fs::OpenOptions;
 use std::path::Path;
@@ -6,14 +7,19 @@ use crate::page::PAGE_SIZE;
 use crate::page::Page;
 
 
-pub struct Storage { next_page_id: u16, file: File }
+pub struct Storage<K, V> {
+    next_page_id: u16, 
+    file: File,
+    _phantom_key: PhantomData<fn() -> K>,
+    _phantom_value: PhantomData<fn() -> V>,
+}
 
-impl Storage {
+impl<K, V> Storage<K, V> {
     pub fn from_path(file_path: impl AsRef<Path>) -> Self {
         let file = Self::open_file(file_path);
         let file_size = file.metadata().unwrap().len();
         let next_page_id = file_size / PAGE_SIZE as u64;
-        Storage { next_page_id: next_page_id as u16, file: file }
+        Storage::new(next_page_id as u16, file)
     }
     
     pub fn allocate_page(&mut self) -> Page {
@@ -28,6 +34,15 @@ impl Storage {
 
     pub fn read_page(&mut self, page: &mut Page) {
         let _ = page.read(&mut self.file);
+    }
+
+    fn new(next_page_id: u16, file: File) -> Self {
+        Storage::<K, V> {
+            next_page_id: next_page_id, 
+            file: file,
+            _phantom_key: PhantomData,
+            _phantom_value: PhantomData,
+        }
     }
 
     fn open_file(file_path: impl AsRef<Path>) -> File { 
@@ -51,7 +66,7 @@ mod test {
     #[test]
     fn test_from_path_zero() {
         let temp_file_path = "test_from_path_zero";
-        let storage = Storage::from_path(temp_file_path);
+        let storage = Storage::<u16, &str>::from_path(temp_file_path);
         let _ = remove_file(temp_file_path);
         assert_eq!(storage.next_page_id, 0);
     }
@@ -64,7 +79,7 @@ mod test {
             .open(temp_file_path).unwrap();
         let bytes = [0; PAGE_SIZE];
         let _ = f.write_all(&bytes);
-        let storage = Storage::from_path(temp_file_path);
+        let storage = Storage::<u16, &str>::from_path(temp_file_path);
         let _ = remove_file(temp_file_path);
         assert_eq!(storage.next_page_id, 1);
     }
@@ -80,7 +95,7 @@ mod test {
         let mut bytes = Vec::with_capacity(bytes_count);
         bytes.extend(std::iter::repeat(0).take(bytes_count));
         let _ = f.write_all(&bytes);
-        let storage = Storage::from_path(temp_file_path);
+        let storage = Storage::<u16, &str>::from_path(temp_file_path);
         assert_eq!(storage.next_page_id, page_count);
         let _ = remove_file(temp_file_path);
     }

@@ -1,34 +1,43 @@
 use std::convert::TryInto;
+use std::marker::PhantomData;
 
 use crate::page::PAGE_SIZE;
 use crate::page::Page;
 
 
-pub struct Leaf { pub node: Node }
+pub struct Leaf<K: Ord, V> { pub node: Node<K, V> }
 
-impl Leaf {
-    pub fn new(node: Node) -> Self {
-        Leaf { node: node}
+impl<K: Ord, V> Leaf<K, V> {
+    pub fn new(node: Node<K, V>) -> Self {
+        Leaf { node: node }
     }
 }
 
-pub struct Node { pub page: Page }
+pub struct Node<K: Ord, V> {
+    pub page: Page,
+    _phantom_key: PhantomData<fn() -> K>,
+    _phantom_value: PhantomData<fn() -> V>,
+}
 
 pub enum NodeType { Leaf, Branch, }
 
-impl Node {
+impl<K: Ord, V> Node<K, V> {
     pub fn new(page: Page) -> Self {
-        Node { page: page }
+        Node::<K, V> {
+            page: page, 
+            _phantom_key: PhantomData,
+            _phantom_value: PhantomData,
+        }
     }
 
     pub fn create(page: Page) -> Self {
-        let mut node = Node { page: page };
+        let mut node = Node::new(page);
         node.set_number_of_pointer(0);
         node.set_end_of_free_space(PAGE_SIZE as u16);
         node
     }
 
-    pub fn add<K, V>(&mut self, slot: &Slot<K, V>) where 
+    pub fn add(&mut self, slot: &Slot<K, V>) where 
         K: SlotBytes + Clone,
         V: SlotBytes + Clone,
     {
@@ -37,7 +46,7 @@ impl Node {
         self.increment_number_of_pointer();
     }
 
-    fn add_slot<K, V>(&mut self, slot: &Slot<K, V>) where 
+    fn add_slot(&mut self, slot: &Slot<K, V>) where 
         K: SlotBytes + Clone,
         V: SlotBytes + Clone,
     {

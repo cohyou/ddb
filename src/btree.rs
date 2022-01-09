@@ -10,12 +10,12 @@ use crate::page::Page;
 use crate::storage::Storage;
 
 
-pub struct BTree {
+pub struct BTree<K, V> {
     root_page_id: Option<u16>,
-    storage: RefCell<Storage>,
+    storage: RefCell<Storage<K, V>>,
 }
 
-impl BTree {
+impl<K: Ord, V> BTree<K, V> {
     pub fn create(file_path: impl AsRef<Path>) -> Self {
         let storage = Storage::from_path(file_path);
         BTree { root_page_id: Default::default(), storage: RefCell::new(storage) }
@@ -29,7 +29,7 @@ impl BTree {
         }
     }
 
-    pub fn insert<K, V>(&mut self, key: K, value: V)  where 
+    pub fn insert(&mut self, key: K, value: V) where 
         K: SlotBytes + Clone,
         V: SlotBytes + Clone,
     {
@@ -53,21 +53,21 @@ impl BTree {
         }
     }
 
-    fn create_leaf(&self) -> Leaf {
+    fn create_leaf(&self) -> Leaf<K, V> {
         let page = self.storage.borrow_mut().allocate_page();
-        let mut node = Node::create(page);
+        let mut node = Node::<K, V>::create(page);
         node.set_node_type(NodeType::Leaf);
         Leaf { node: node }
     }
 
-    fn write_leaf(&self, leaf: &mut Leaf) {
+    fn write_leaf(&self, leaf: &mut Leaf<K, V>) {
         self.storage.borrow_mut().write_page(&mut leaf.node.page);
     }
 
-    fn read_node(&self, page_id: u16) -> Node {
+    fn read_node(&self, page_id: u16) -> Node<K, V> {
         let mut page = Page::new(page_id);
         self.storage.borrow_mut().read_page(&mut page);
-        Node::new(page)
+        Node::<K, V>::new(page)
     }
 
     // fn root_page_id(&self) -> u16 { self.root_page_id.unwrap() }
@@ -89,7 +89,7 @@ mod test {
     #[test]
     fn test_search_empty() {
         let p = "test_search_empty";
-        let btree = BTree::create(p);
+        let btree = BTree::<u16, &str>::create(p);
         let error: Result<&str, Error> = Err(Error::NoPage);
         let _ = remove_file(p);
         assert_eq!(btree.search(""), error);
@@ -133,7 +133,7 @@ mod test {
         let p = "test_insert_split";
         let mut btree = BTree::create(p);
         btree.insert(13u16, "abc");
-        btree.insert(2000u32, "defg");
+        btree.insert(2000u16, "defg");
         btree.insert(8976u16, "ありがと");
         btree.insert(7u16, "ぽぽ");
         let res = file_bytes(p);
