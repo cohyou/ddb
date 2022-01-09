@@ -39,7 +39,7 @@ impl<K: Ord + AsKey, V> BTree<K, V> {
             match node.node_type() {
                 NodeType::Leaf => {
                     let slot = Slot::new(key, value);
-                    node.insert(&slot);
+                    let _ = node.insert(&slot);
                     let mut leaf = Leaf::new(node);
                     self.write_leaf(&mut leaf);
                 },
@@ -48,7 +48,7 @@ impl<K: Ord + AsKey, V> BTree<K, V> {
         } else {
             let mut leaf = self.create_leaf();
             let slot = Slot::new(key, value);
-            leaf.node.insert(&slot);
+            let _ = leaf.node.insert(&slot);
             self.write_leaf(&mut leaf);
             self.root_page_id = Some(0);
         }

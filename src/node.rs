@@ -1,6 +1,7 @@
 use std::convert::TryInto;
 use std::marker::PhantomData;
 
+use crate::error::Error;
 use crate::page::PAGE_SIZE;
 use crate::page::Page;
 use crate::slot::Slot;
@@ -40,13 +41,35 @@ impl<K: Ord + AsKey, V> Node<K, V> {
         node
     }
 
-    pub fn insert(&mut self, slot: &Slot<K, V>) where
+    pub fn insert(&mut self, slot: &Slot<K, V>) -> Result<(), Error> where
         K: SlotBytes + Clone,
         V: SlotBytes + Clone,
     {
-        self.add_slot(&slot);
+        if self.is_full(slot) {
+            return Err(Error::FullLeaf)
+        } 
+        self.add_slot(slot);
         self.insert_pointer(&slot.key);
         self.increment_number_of_pointer();
+        Ok(())
+    }
+
+    fn is_full(&self, slot: &Slot<K, V>) -> bool where
+        K: SlotBytes + Clone,
+        V: SlotBytes + Clone,
+    {
+        let header_len = 8 as usize;
+        let number_of_pointer = self.number_of_pointer() + 1;
+        let offset_pointer = header_len + 2 * number_of_pointer as usize;
+
+        let bytes = slot.to_bytes();
+        let end_of_free_space = self.end_of_free_space() as usize;
+        if end_of_free_space < bytes.len() {
+            return true;
+        }
+        let offset_slot = end_of_free_space - bytes.len();
+
+        offset_slot <= offset_pointer
     }
 
     fn keys<'a>(&self) -> Vec<K> where K: AsKey {
@@ -136,6 +159,7 @@ impl<K: Ord + AsKey, V> Node<K, V> {
 
 #[cfg(test)]
 mod test {
+    use crate::error::Error;
     use crate::node::Node;
     use crate::page::Page;
     use crate::slot::Slot;
@@ -144,12 +168,27 @@ mod test {
     fn test_pointers_sorted() {
         let page = Page::new(Default::default());
         let mut node = Node::<u16, &str>::create(page);
-        node.insert(&Slot::new(2u16, "abc"));
-        node.insert(&Slot::new(7u16, "ありがと"));
-        node.insert(&Slot::new(5u16, "defg"));
-        node.insert(&Slot::new(1u16, "ぽぽ"));
+        let _ = node.insert(&Slot::new(2u16, "abc"));
+        let _ = node.insert(&Slot::new(7u16, "ありがと"));
+        let _ = node.insert(&Slot::new(5u16, "defg"));
+        let _ = node.insert(&Slot::new(1u16, "ぽぽ"));
         let pointers = node.keys();
         println!("{:?}", &node.page);
         assert_eq!(pointers, [1, 2, 5, 7]);
+    }
+
+    #[test]
+    fn test_pointers_full() {
+        let page = Page::new(Default::default());
+        let mut node = Node::<u16, &str>::create(page);
+        let _ = node.insert(&Slot::new(2u16, "abc"));
+        let _ = node.insert(&Slot::new(7u16, "ありがと"));
+        let _ = node.insert(&Slot::new(5u16, "defg"));
+        let _ = node.insert(&Slot::new(1u16, "ぽぽ"));
+        let res = node.insert(&Slot::new(100u16, "あふれちゃう"));
+        let pointers = node.keys();
+        println!("{:?}", &node.page);
+        assert_eq!(pointers, [1, 2, 5, 7]);
+        assert_eq!(res, Err(Error::FullLeaf));
     }
 }
