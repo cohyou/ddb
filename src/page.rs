@@ -10,7 +10,7 @@ pub const PAGE_SIZE: usize = 64;
 
 
 #[derive(Debug)]
-pub struct Page { id: u16, pub bytes: [u8; PAGE_SIZE] }
+pub struct Page { pub id: u16, pub bytes: [u8; PAGE_SIZE] }
 
 impl Page {
     pub fn new(id: u16) -> Self {
@@ -34,10 +34,6 @@ impl Page {
             self.bytes[offset + i] = byte.clone();
         }
     }
-
-    // fn set(&mut self, bytes: [u8; PAGE_SIZE]) {
-    //     self.bytes = bytes;
-    // }
 
     pub fn read(&mut self, file: &mut File) -> io::Result<()> {
         let offset = PAGE_SIZE as u64 * self.id as u64;
