@@ -44,7 +44,7 @@ impl<K: Ord + SlotBytes, V> BTree<K, V> {
     }
 
     pub fn insert(&mut self, key: K, value: V) where
-        K: SlotBytes + Clone,
+        K: SlotBytes + Clone + std::fmt::Debug,
         V: SlotBytes + Clone,
     {
         if let Some(root_page_id) = self.root_page_id {
@@ -58,7 +58,7 @@ impl<K: Ord + SlotBytes, V> BTree<K, V> {
                             self.write_leaf(&mut leaf);
                         },
                         Err(_) => {
-                            self.split(slot);
+                            self.split(&mut node, slot);
                             unimplemented!();
                         },
                     }
@@ -87,11 +87,26 @@ impl<K: Ord + SlotBytes, V> BTree<K, V> {
         }
     }
 
-    fn split(&self, _slot: Slot<K, V>) where
-        K: SlotBytes + Clone,
+    fn split(&self, node: &mut Node<K, V>, _slot: Slot<K, V>) where
+        K: SlotBytes + Clone + std::fmt::Debug,
         V: SlotBytes + Clone, 
     {
-
+        let mut new_node = Node::<K, V>::create(self.storage.borrow_mut().allocate_page());
+        new_node.set_node_type(node.node_type());
+        match new_node.node_type() {
+            NodeType::Leaf => {
+                let keys = node.keys();
+                for key in keys.split_at(keys.len() / 2).1.iter().rev() {
+                    dbg!(key);
+                    let value = node.search(key).unwrap();
+                    let _ = new_node.insert(&Slot::new(key.clone(), value));
+                    let _ = node.delete(key);
+                }
+                println!("node: {:?}", node.page.bytes);
+                println!("new_node: {:?}", new_node.page.bytes);
+            },
+            NodeType::Branch => unimplemented!(),
+        }
     }
 
     fn create_leaf(&self) -> Leaf<K, V> {
@@ -126,6 +141,8 @@ mod test {
     use crate::btree::BTree;
     use crate::error::Error;
     use crate::page::PAGE_SIZE;
+    // use crate::slot::Slot;
+
 
     #[test]
     fn test_search_empty() {
@@ -156,7 +173,7 @@ mod test {
         let res = &res[PAGE_SIZE - slot_len..PAGE_SIZE];
 
         let _ = remove_file(p);
-        assert_eq!(res, [1, 123, 3, 0, 97, 98, 99]); 
+        assert_eq!(res, [1, 123, 3, 0, 97, 98, 99]);
     }
 
     #[test]
@@ -178,9 +195,12 @@ mod test {
     //     btree.insert(2000u16, "defg".to_string());
     //     btree.insert(8976u16, "ありがと".to_string());
     //     btree.insert(7u16, "ぽぽ".to_string());
-    //     let res = file_bytes(p);
+
+    //     let mut node = btree.read_node(btree.root_page_id.unwrap());
+    //     btree.split(&mut node, Slot::new(100u16, "あふれちゃう".to_string()));
+
     //     let _ = remove_file(p);
-    //     assert_eq!(res, []); 
+    //     // assert_eq!(res, []); 
     // }
 
     fn file_bytes(path: impl AsRef<Path>) -> Vec<u8> {

@@ -109,6 +109,19 @@ impl<K: Ord + SlotBytes, V> Node<K, V> {
         }
     }
 
+    pub fn keys<'a>(&self) -> Vec<K> where K: SlotBytes {
+        let range = self.pointers_range();
+        self.page.bytes[range].chunks(2)
+            .map(|chunk| Self::offset_to_u16(chunk, 0))
+            .map(|slot_offset| {
+                let key_size = size_of::<K>();
+                let offset = slot_offset as usize + key_size - 1;
+                let bytes = &self.page.bytes[Self::range(offset, Self::pointer_size())];
+                K::from_bytes(bytes)
+            })
+            .collect::<Vec<K>>()
+    }
+
     fn slot_len(&self, offset: usize) -> usize {
         let len_of_slot_key = LEN_OF_LEN_OF_POINTER + Self::pointer_size();
         let start_of_len_of_value = offset + len_of_slot_key;
@@ -146,19 +159,6 @@ impl<K: Ord + SlotBytes, V> Node<K, V> {
         let offset_slot = end_of_free_space - bytes.len();
 
         offset_slot <= offset_pointer
-    }
-
-    fn keys<'a>(&self) -> Vec<K> where K: SlotBytes {
-        let range = self.pointers_range();
-        self.page.bytes[range].chunks(2)
-            .map(|chunk| Self::offset_to_u16(chunk, 0))
-            .map(|slot_offset| {
-                let key_size = size_of::<K>();
-                let offset = slot_offset as usize + key_size - 1;
-                let bytes = &self.page.bytes[Self::range(offset, Self::pointer_size())];
-                K::from_bytes(bytes)
-            })
-            .collect::<Vec<K>>()
     }
 
     fn offset_to_u16(chunk: &[u8], offset: usize) -> u16 {
@@ -358,6 +358,23 @@ mod test {
         let mut node2 = TestNode::create(Page::new(Default::default()));
         let _ = node2.insert(&Slot::new(2u16, "abc".to_string()));
         let _ = node2.insert(&Slot::new(7u16, "ありがと".to_string()));
+        assert_eq!(node1.page.bytes, node2.page.bytes);
+    }
+
+    #[test]
+    fn test_delete_transfer() {
+        let mut node1 = TestNode::create(Page::new(Default::default()));
+        let _ = node1.insert(&Slot::new(13u16, "abc".to_string()));
+        let _ = node1.insert(&Slot::new(2000u16, "defg".to_string()));
+        let _ = node1.insert(&Slot::new(8976u16, "ありがと".to_string()));
+        let _ = node1.insert(&Slot::new(7u16, "ぽぽ".to_string()));
+        assert!(node1.delete(&8976).is_ok());
+        assert!(node1.delete(&2000).is_ok());
+
+        let mut node2 = TestNode::create(Page::new(Default::default()));
+        let _ = node2.insert(&Slot::new(13u16, "abc".to_string()));
+        let _ = node2.insert(&Slot::new(7u16, "ぽぽ".to_string()));
+        
         assert_eq!(node1.page.bytes, node2.page.bytes);
     }
 }
