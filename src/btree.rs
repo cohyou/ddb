@@ -21,14 +21,14 @@ impl<K: Ord + SlotBytes, V> BTree<K, V> {
         BTree { root_page_id: Default::default(), storage: RefCell::new(storage) }
     }
 
-    pub fn search(&self, key: K) -> Result<V, Error> where 
+    pub fn search(&self, key: &K) -> Result<V, Error> where 
         V: SlotBytes
     {
         if let Some(root_page_id) = self.root_page_id {
             let node = self.read_node(root_page_id);
             match node.node_type() {
                 NodeType::Leaf => {
-                    if let Some(v) = node.search(&key) {
+                    if let Some(v) = node.search(key) {
                         Ok(v)
                     } else {
                         Err(Error::NotFound)
@@ -52,11 +52,19 @@ impl<K: Ord + SlotBytes, V> BTree<K, V> {
             match node.node_type() {
                 NodeType::Leaf => {
                     let slot = Slot::new(key, value);
-                    let _ = node.insert(&slot);
-                    let mut leaf = Leaf::new(node);
-                    self.write_leaf(&mut leaf);
+                    match node.insert(&slot) {
+                        Ok(_) => {
+                            let mut leaf = Leaf::new(node);
+                            self.write_leaf(&mut leaf);
+                        },
+                        Err(_) => {
+                            self.split(slot);
+                            unimplemented!();
+                        },
+                    }
+
                 },
-                NodeType::Branch => {},
+                NodeType::Branch => unimplemented!(),
             }
         } else {
             let mut leaf = self.create_leaf();
@@ -65,6 +73,25 @@ impl<K: Ord + SlotBytes, V> BTree<K, V> {
             self.write_leaf(&mut leaf);
             self.root_page_id = Some(0);
         }
+    }
+
+    pub fn delete(&mut self, key: &K) where K: SlotBytes {
+        if let Some(root_page_id) = self.root_page_id {
+            let mut node = self.read_node(root_page_id);
+            match node.node_type() {
+                NodeType::Leaf => {
+                    let _ = node.delete(key);
+                },
+                NodeType::Branch => unimplemented!(),
+            }
+        }
+    }
+
+    fn split(&self, _slot: Slot<K, V>) where
+        K: SlotBytes + Clone,
+        V: SlotBytes + Clone, 
+    {
+
     }
 
     fn create_leaf(&self) -> Leaf<K, V> {
@@ -106,7 +133,7 @@ mod test {
         let btree = BTree::<u16, String>::create(p);
         let error: Result<String, Error> = Err(Error::NoPage);
         let _ = remove_file(p);
-        assert_eq!(btree.search(0), error);
+        assert_eq!(btree.search(&0), error);
     }
 
     #[test]
@@ -143,18 +170,18 @@ mod test {
         assert_eq!(res, [2, 0, 39, 0, 0, 0, 0, 0, 56, 0, 39, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 16, 35, 12, 0, 227, 129, 130, 227, 130, 138, 227, 129, 140, 227, 129, 168, 2, 13, 0, 3, 0, 97, 98, 99]); 
     }
 
-    #[test]
-    fn test_insert_split() {
-        let p = "test_insert_split";
-        let mut btree = BTree::create(p);
-        btree.insert(13u16, "abc".to_string());
-        btree.insert(2000u16, "defg".to_string());
-        btree.insert(8976u16, "ありがと".to_string());
-        btree.insert(7u16, "ぽぽ".to_string());
-        let res = file_bytes(p);
-        let _ = remove_file(p);
-        assert_eq!(res, []); 
-    }
+    // #[test]
+    // fn test_insert_split() {
+    //     let p = "test_insert_split";
+    //     let mut btree = BTree::create(p);
+    //     btree.insert(13u16, "abc".to_string());
+    //     btree.insert(2000u16, "defg".to_string());
+    //     btree.insert(8976u16, "ありがと".to_string());
+    //     btree.insert(7u16, "ぽぽ".to_string());
+    //     let res = file_bytes(p);
+    //     let _ = remove_file(p);
+    //     assert_eq!(res, []); 
+    // }
 
     fn file_bytes(path: impl AsRef<Path>) -> Vec<u8> {
         let mut f = OpenOptions::new()

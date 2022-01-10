@@ -1,5 +1,7 @@
 use std::convert::TryInto;
 use std::marker::PhantomData;
+use std::mem::size_of;
+use std::ops::Range;
 
 use crate::error::Error;
 use crate::page::PAGE_SIZE;
@@ -23,6 +25,10 @@ pub struct Node<K: Ord + SlotBytes, V> {
 }
 
 pub enum NodeType { Leaf, Branch, }
+
+const HEADER_LEN: usize = 8;
+const LEN_OF_LEN_OF_POINTER: usize = 1;
+const LEN_OF_LEN_OF_VALUE: usize = 2;
 
 impl<K: Ord + SlotBytes, V> Node<K, V> {
     pub fn new(page: Page) -> Self {
@@ -53,26 +59,77 @@ impl<K: Ord + SlotBytes, V> Node<K, V> {
         Ok(())
     }
 
-    pub fn search(&self, key: &K) -> Option<V> where
-        V: SlotBytes
-    {
-        let keys = self.keys();
-        match &keys.binary_search(key) {
-            Ok(index) => {
-                let header_len = 8 as usize;
-                let pointer = header_len + 2 * index;
-                let bytes = &self.page.bytes[pointer..pointer + 2];
-                let offset = u16::from_le_bytes(bytes.try_into().unwrap());
-                let start_of_value = (offset + 3) as usize;
-                let bytes = &self.page.bytes[start_of_value..start_of_value + 2];
-                let len_of_value = u16::from_le_bytes(bytes.try_into().unwrap()) as usize;
-                let start_of_value = start_of_value + std::mem::size_of::<u16>();
-                let bytes = &self.page.bytes[start_of_value..start_of_value + len_of_value];
-                let value = V::from_bytes(bytes);
-                Some(value)
+    pub fn search(&self, key: &K) -> Option<V> where V: SlotBytes {
+        match self.search_slot_offset(key) {
+            Some(offset) => {
+                let start_of_len_of_value = (offset + 3) as usize;
+                let len_of_value = Self::offset_to_u16(&self.page.bytes, start_of_len_of_value);
+
+                let start_of_value = start_of_len_of_value + LEN_OF_LEN_OF_VALUE;
+                let bytes = &self.page.bytes[Self::range(start_of_value, len_of_value as usize)];
+ 
+                Some(V::from_bytes(bytes))
             },
-            Err(_insertion_point) => None,
+            None => None,
         }
+    }
+
+    pub fn delete(&mut self, key: &K) -> Result<(), Error> {
+        match self.search_pointer(key) {
+            Some(pointer_index) => {
+                let slot_offset = self.pointer_index_to_offset(pointer_index);
+
+                // delete slot
+                let end_of_free_space = self.end_of_free_space() as usize;
+                let len = self.slot_len(slot_offset);
+                if slot_offset < end_of_free_space as usize {
+                    let bytes = &mut self.page.bytes;
+                    bytes.copy_within(end_of_free_space..slot_offset, len);
+                }
+                &self.page.bytes[Self::range(end_of_free_space, len)].fill(0);
+
+                // end_of_free_space
+                let end_of_free_space = self.end_of_free_space();
+                self.set_end_of_free_space(end_of_free_space + len as u16);
+
+                // delete pointer
+                let pointer_offset = Self::pointer_offset(pointer_index);
+                let pointer_last = self.start_of_free_space();
+                let range = pointer_offset + Self::pointer_size()..pointer_last;
+                let bytes = &mut self.page.bytes;
+                bytes.copy_within(range, pointer_offset);
+                bytes[pointer_last - Self::pointer_size()..pointer_last].fill(0);
+
+                // number_of_pointer
+                self.decrement_number_of_pointer();
+
+                Ok(())
+            },
+            None => Err(Error::NotFound),
+        }
+    }
+
+    fn slot_len(&self, offset: usize) -> usize {
+        let len_of_slot_key = LEN_OF_LEN_OF_POINTER + Self::pointer_size();
+        let start_of_len_of_value = offset + len_of_slot_key;
+        let len_of_value = Self::offset_to_u16(&self.page.bytes, start_of_len_of_value);
+
+        len_of_slot_key + LEN_OF_LEN_OF_VALUE + len_of_value as usize
+    }
+
+    fn search_slot_offset(&self, key: &K) -> Option<usize> {
+        self.search_pointer(key).and_then(|index| {
+            Some(self.pointer_index_to_offset(index))
+        })
+    }
+
+    fn pointer_index_to_offset(&self, index: usize) -> usize {
+        let pointer = Self::pointer_offset(index.clone());
+        Self::offset_to_u16(&self.page.bytes, pointer) as usize
+    }
+
+    fn search_pointer(&self, key: &K) -> Option<usize> {
+        self.keys().binary_search(key).ok()
     }
 
     fn is_full(&self, slot: &Slot<K, V>) -> bool where
@@ -92,27 +149,34 @@ impl<K: Ord + SlotBytes, V> Node<K, V> {
     }
 
     fn keys<'a>(&self) -> Vec<K> where K: SlotBytes {
-        let offset = self.start_of_free_space();
-        let header_len = 8 as usize;
-        let range = header_len..offset as usize;
+        let range = self.pointers_range();
         self.page.bytes[range].chunks(2)
-            .map(|chunk| {
-                let chunk = &chunk[0..2];
-                u16::from_le_bytes(chunk.try_into().unwrap())
-            })
-            .map(|offset| {
-                let key_size = std::mem::size_of::<K>();
-                let offset = offset as usize + key_size - 1;
-                let bytes = &self.page.bytes[offset..offset + 2];
+            .map(|chunk| Self::offset_to_u16(chunk, 0))
+            .map(|slot_offset| {
+                let key_size = size_of::<K>();
+                let offset = slot_offset as usize + key_size - 1;
+                let bytes = &self.page.bytes[Self::range(offset, Self::pointer_size())];
                 K::from_bytes(bytes)
             })
             .collect::<Vec<K>>()
     }
 
+    fn offset_to_u16(chunk: &[u8], offset: usize) -> u16 {
+        let bytes = &chunk[offset..offset + size_of::<u16>()];
+        u16::from_le_bytes(bytes.try_into().unwrap())
+    }
+
+    fn pointers_range(&self) -> Range<usize> {
+        HEADER_LEN..self.start_of_free_space()
+    }
+
     fn start_of_free_space(&self) -> usize {
-        let header_len = 8 as usize;
         let number_of_pointer = self.number_of_pointer();
-        header_len + 2 * number_of_pointer as usize
+        Self::pointer_offset(number_of_pointer as usize)
+    }
+
+    fn pointer_offset(index: usize) -> usize {
+        HEADER_LEN + Self::pointer_size() * index
     }
 
     fn add_slot(&mut self, slot: &Slot<K, V>) where 
@@ -128,25 +192,27 @@ impl<K: Ord + SlotBytes, V> Node<K, V> {
 
     fn insert_pointer(&mut self, key: &K) where K: SlotBytes {
         let keys = self.keys();
-        let insert_point = 
+        let insertion_point = 
             if let Some(p) = keys.iter()
                 .position(|k| key < k ) {
                 p
             } else {
                 keys.len()
             };
-        let header_len = 8usize;
-        let number_of_pointer = self.number_of_pointer() as usize;
-        let end_of_free_space = self.end_of_free_space();
-        let end_offset = header_len + 2 * number_of_pointer;
-        let start_offset = header_len + 2 * insert_point;
-        self.page.bytes.copy_within(start_offset..end_offset, start_offset + 2);
-        self.page.set_u16_bytes(start_offset.into(), end_of_free_space)
+        let start_offset = HEADER_LEN + Self::pointer_size() * insertion_point;
+        let end_offset = self.start_of_free_space();
+        self.page.bytes.copy_within(start_offset..end_offset, start_offset + Self::pointer_size());
+        self.page.set_u16_bytes(start_offset.into(), self.end_of_free_space())
     }
 
     fn increment_number_of_pointer(&mut self) {
         let current = self.number_of_pointer();
         self.set_number_of_pointer(current + 1);
+    }
+
+    fn decrement_number_of_pointer(&mut self) {
+        let current = self.number_of_pointer();
+        self.set_number_of_pointer(current - 1);
     }
 
     pub fn set_node_type(&mut self, node_type: NodeType) {
@@ -164,6 +230,10 @@ impl<K: Ord + SlotBytes, V> Node<K, V> {
         }
     }
 
+    fn pointer_size() -> usize {
+        size_of::<u16>()
+    }
+
     fn set_number_of_pointer(&mut self, number: u16) {
         self.page.set_u16_bytes(0, number);
     }
@@ -179,6 +249,10 @@ impl<K: Ord + SlotBytes, V> Node<K, V> {
     fn end_of_free_space(&self) -> u16 {
         self.page.u16_bytes(2)
     }
+
+    fn range(start: usize, len: usize) -> std::ops::Range<usize> {
+        start..start + len
+    }
 }
 
 #[cfg(test)]
@@ -186,12 +260,18 @@ mod test {
     use crate::error::Error;
     use crate::node::Node;
     use crate::page::Page;
+    use crate::page::PAGE_SIZE;
     use crate::slot::Slot;
+    use super::LEN_OF_LEN_OF_POINTER;
+    use super::LEN_OF_LEN_OF_VALUE;
+
+
+    type TestNode = Node::<u16, String>;
 
     #[test]
     fn test_pointers_sorted() {
         let page = Page::new(Default::default());
-        let mut node = Node::<u16, String>::create(page);
+        let mut node = TestNode::create(page);
         let _ = node.insert(&Slot::new(2u16, "abc".to_string()));
         let _ = node.insert(&Slot::new(7u16, "ありがと".to_string()));
         let _ = node.insert(&Slot::new(5u16, "defg".to_string()));
@@ -204,14 +284,13 @@ mod test {
     #[test]
     fn test_pointers_full() {
         let page = Page::new(Default::default());
-        let mut node = Node::<u16, String>::create(page);
+        let mut node = TestNode::create(page);
         let _ = node.insert(&Slot::new(2u16, "abc".to_string()));
         let _ = node.insert(&Slot::new(7u16, "ありがと".to_string()));
         let _ = node.insert(&Slot::new(5u16, "defg".to_string()));
         let _ = node.insert(&Slot::new(1u16, "ぽぽ".to_string()));
         let res = node.insert(&Slot::new(100u16, "あふれちゃう".to_string()));
         let pointers = node.keys();
-        // println!("{:?}", &node.page);
         assert_eq!(pointers, [1, 2, 5, 7]);
         assert_eq!(res, Err(Error::FullLeaf));
     }
@@ -219,7 +298,7 @@ mod test {
     #[test]
     fn test_search_hit() {
         let page = Page::new(Default::default());
-        let mut node = Node::<u16, String>::create(page);
+        let mut node = TestNode::create(page);
         let _ = node.insert(&Slot::new(2u16, "abc".to_string()));
         assert_eq!(node.search(&2u16), Some("abc".to_string()));
     }
@@ -227,8 +306,58 @@ mod test {
     #[test]
     fn test_search_notfound() {
         let page = Page::new(Default::default());
-        let mut node = Node::<u16, String>::create(page);
+        let mut node = TestNode::create(page);
         let _ = node.insert(&Slot::new(2u16, "abc".to_string()));
         assert_eq!(node.search(&5u16), None);
+    }
+
+    #[test]
+    fn test_search_remove_offset() {
+        let page = Page::new(Default::default());
+        let mut node = TestNode::create(page);
+        let target_value = "defg";
+        let _ = node.insert(&Slot::new(2u16, "abc".to_string()));
+        let _ = node.insert(&Slot::new(7u16, "ありがと".to_string()));
+        let _ = node.insert(&Slot::new(5u16, target_value.to_string()));
+        assert_eq!(
+            node.slot_len(node.search_slot_offset(&5).unwrap()), 
+            LEN_OF_LEN_OF_POINTER + TestNode::pointer_size() +
+            LEN_OF_LEN_OF_VALUE + target_value.len()
+        )
+    }
+
+    #[test]
+    fn test_delete_notfound() {
+        let page = Page::new(Default::default());
+        let mut node = TestNode::create(page);
+        let _ = node.insert(&Slot::new(2u16, "abc".to_string()));
+        assert!(node.delete(&5).is_err());
+    }
+
+    #[test]
+    fn test_delete_one() {
+        let page = Page::new(Default::default());
+        let mut node = TestNode::create(page);
+        let _ = node.insert(&Slot::new(2u16, "abc".to_string()));
+        assert!(node.delete(&2).is_ok());
+        let mut res = [0u8; PAGE_SIZE];
+        res[2] = 64;
+        assert_eq!(node.page.bytes, res);
+    }
+
+    #[test]
+    fn test_delete_multi() {
+        let mut node1 = TestNode::create(Page::new(Default::default()));
+        let target_value = "defg";
+        let _ = node1.insert(&Slot::new(2u16, "abc".to_string()));
+        let _ = node1.insert(&Slot::new(7u16, "ありがと".to_string()));
+        let _ = node1.insert(&Slot::new(5u16, target_value.to_string()));
+        assert!(node1.delete(&5).is_ok());
+
+
+        let mut node2 = TestNode::create(Page::new(Default::default()));
+        let _ = node2.insert(&Slot::new(2u16, "abc".to_string()));
+        let _ = node2.insert(&Slot::new(7u16, "ありがと".to_string()));
+        assert_eq!(node1.page.bytes, node2.page.bytes);
     }
 }
