@@ -256,11 +256,7 @@ impl<K: Ord + SlotBytes, V> Node<K, V> {
     }
 
     pub fn node_type(&self) -> NodeType {
-        match self.page.u16_bytes(4) {
-            u16::MIN => NodeType::Leaf,
-            u16::MAX => NodeType::Branch,
-            v @ _ => panic!("invalid node type value: {}", v),
-        }
+        self.page.node_type()
     }
 
     fn pointer_size() -> usize {
