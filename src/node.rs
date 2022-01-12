@@ -10,32 +10,6 @@ use crate::slot::Slot;
 use crate::slot::SlotBytes;
 
 
-pub struct Leaf<K: Ord + SlotBytes, V> { pub node: Node<K, V> }
-
-impl<K: Ord + SlotBytes, V> Leaf<K, V> {
-    pub fn new(mut node: Node<K, V>) -> Self {
-        node.set_node_type(NodeType::Leaf);
-        Leaf { node: node }
-    }
-}
-
-pub struct Branch<K: Ord + SlotBytes, V> { pub node: Node<K, V> }
-
-impl<K: Ord + SlotBytes, V> Branch<K, V> {
-    pub fn new(mut node: Node<K, V>) -> Self {
-        node.set_node_type(NodeType::Branch);
-        Branch { node: node }
-    }
-
-    pub fn set_max_page_id(&mut self, number: u16) {
-        self.node.page.set_u16_bytes(6, number);
-    }
-
-    pub fn max_page_id(&self) -> u16 {
-        self.node.page.u16_bytes(6)
-    }
-}
-
 pub struct Node<K: Ord + SlotBytes, V> {
     pub page: Page,
     _phantom_key: PhantomData<fn() -> K>,
