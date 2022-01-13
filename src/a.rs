@@ -29,9 +29,29 @@ fn test() {
         println!("{:x?}", popo);
     }
 
-    let mut a = *b"abcde";
-    // a.copy_within(0..2, 3);
-    // a.copy_within(0..3, 2);
-    a.copy_within(2..5, 0);
-    println!("a:{:x?}", a);
+    // let mut a = *b"abcde";
+    // // a.copy_within(0..2, 3);
+    // // a.copy_within(0..3, 2);
+    // a.copy_within(2..5, 0);
+    // println!("a:{:x?}", a);
+
+    assert_eq!(200u8 as i8, -10);
+
+    let bytes = [0b00101010,0b00101010];
+    assert_eq!(a(bytes), NodeType::Leaf);
+}
+
+#[derive(PartialEq, Debug)]
+enum NodeType {
+    Leaf,
+    Branch,
+}
+
+fn a(v: [u8; 2]) -> NodeType {
+    let i = i16::from_le_bytes(v);
+    if i < 0 {
+        NodeType::Leaf
+    } else {
+        NodeType::Branch
+    }
 }
