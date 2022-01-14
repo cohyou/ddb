@@ -1,11 +1,11 @@
-use crate::node::Node;
+use crate::node::Slotted;
 use crate::node::NodeType;
 use crate::slot::SlotBytes;
 
-pub struct Leaf<K: Ord + SlotBytes, V> { pub node: Node<K, V> }
+pub struct Leaf<K: Ord + SlotBytes, V> { pub node: Slotted<K, V> }
 
 impl<K: Ord + SlotBytes, V> Leaf<K, V> {
-    pub fn new(mut node: Node<K, V>) -> Self {
+    pub fn new(mut node: Slotted<K, V>) -> Self {
         node.set_node_type(NodeType::Leaf);
         Leaf { node: node }
     }

@@ -1,12 +1,12 @@
-use crate::node::Node;
+use crate::node::Slotted;
 use crate::node::NodeType;
 use crate::slot::SlotBytes;
 
 
-pub struct Branch<K: Ord + SlotBytes, V> { pub node: Node<K, V> }
+pub struct Branch<K: Ord + SlotBytes> { pub node: Slotted<K, u16> }
 
-impl<K: Ord + SlotBytes, V> Branch<K, V> {
-    pub fn new(mut node: Node<K, V>) -> Self {
+impl<K: Ord + SlotBytes> Branch<K> {
+    pub fn new(mut node: Slotted<K, u16>) -> Self {
         node.set_node_type(NodeType::Branch);
         Branch { node: node }
     }

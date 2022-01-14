@@ -8,6 +8,5 @@ mod leaf;
 mod storage;
 mod btree;
 
-mod a;
 
 pub use btree::*;

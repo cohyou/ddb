@@ -3,6 +3,8 @@ use std::marker::PhantomData;
 use std::mem::size_of;
 use std::ops::Range;
 
+use crate::branch::Branch;
+use crate::leaf::Leaf;
 use crate::error::Error;
 use crate::page::PAGE_SIZE;
 use crate::page::Page;
@@ -10,10 +12,33 @@ use crate::slot::Slot;
 use crate::slot::SlotBytes;
 
 
-pub struct Node<K: Ord + SlotBytes, V> {
+pub struct Slotted<K: Ord + SlotBytes, V> {
     pub page: Page,
     _phantom_key: PhantomData<fn() -> K>,
     _phantom_value: PhantomData<fn() -> V>,
+}
+
+pub enum Node<K: Ord + SlotBytes, V> {
+    Leaf(Leaf<K, V>),
+    Branch(Branch<K>),
+}
+
+impl<K: Ord + SlotBytes, V> Node<K, V> {
+    pub fn new(page: Page) -> Self {
+        match page.u16_bytes(4) {
+            u16::MIN => {
+                let slotted = Slotted::<K, V>::create(page);
+                let leaf = Leaf::new(slotted);
+                Node::Leaf(leaf)
+            },
+            u16::MAX => {
+                let slotted = Slotted::<K, u16>::create(page);
+                let branch = Branch::new(slotted);
+                Node::Branch(branch)
+            },
+            v @ _ => panic!("invalid node type value: {}", v),
+        }
+    }
 }
 
 pub enum NodeType { Leaf, Branch, }
@@ -22,9 +47,9 @@ const HEADER_LEN: usize = 8;
 const LEN_OF_LEN_OF_POINTER: usize = 2;
 const LEN_OF_LEN_OF_VALUE: usize = 2;
 
-impl<K: Ord + SlotBytes, V> Node<K, V> {
+impl<K: Ord + SlotBytes, V> Slotted<K, V> {
     pub fn new(page: Page) -> Self {
-        Node::<K, V> {
+        Slotted::<K, V> {
             page: page, 
             _phantom_key: PhantomData,
             _phantom_value: PhantomData,
@@ -32,7 +57,7 @@ impl<K: Ord + SlotBytes, V> Node<K, V> {
     }
 
     pub fn create(page: Page) -> Self {
-        let mut node = Node::new(page);
+        let mut node = Slotted::new(page);
         node.set_number_of_pointer(0);
         node.set_end_of_free_space(PAGE_SIZE as u16);
         node
@@ -230,7 +255,11 @@ impl<K: Ord + SlotBytes, V> Node<K, V> {
     }
 
     pub fn node_type(&self) -> NodeType {
-        self.page.node_type()
+        match self.page.u16_bytes(4) {
+            u16::MIN => NodeType::Leaf,
+            u16::MAX => NodeType::Branch,
+            v @ _ => panic!("invalid node type value: {}", v),
+        }
     }
 
     fn pointer_size() -> usize {
@@ -261,7 +290,7 @@ impl<K: Ord + SlotBytes, V> Node<K, V> {
 #[cfg(test)]
 mod test {
     use crate::error::Error;
-    use crate::node::Node;
+    use crate::node::Slotted;
     use crate::page::Page;
     use crate::page::PAGE_SIZE;
     use crate::slot::Slot;
@@ -269,7 +298,7 @@ mod test {
     use super::LEN_OF_LEN_OF_VALUE;
 
 
-    type TestNode = Node::<u16, String>;
+    type TestNode = Slotted::<u16, String>;
 
     #[test]
     fn test_pointers_sorted() {

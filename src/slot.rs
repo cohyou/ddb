@@ -26,27 +26,27 @@ impl<K, V> Slot<K, V> where
     }
 }
 
-#[allow(dead_code)]
-pub enum SlotValue<V> {
-    Leaf(V),
-    PageId(u16),
-}
+// #[allow(dead_code)]
+// pub enum SlotValue<V> {
+//     Leaf(V),
+//     PageId(u16),
+// }
 
-impl<V: Clone> SlotValue<V> {
-    pub fn leaf_value(&self) -> V {
-        match self {
-            Self::Leaf(v) => v.clone(),
-            Self::PageId(_) => panic!(),
-        }
-    }
+// impl<V: Clone> SlotValue<V> {
+//     pub fn leaf_value(&self) -> V {
+//         match self {
+//             Self::Leaf(v) => v.clone(),
+//             Self::PageId(_) => panic!(),
+//         }
+//     }
 
-    pub fn page_id(&self) -> u16 {
-        match self {
-            Self::Leaf(_) => panic!(),
-            Self::PageId(page_id) => page_id.clone(),
-        }
-    }
-}
+//     pub fn page_id(&self) -> u16 {
+//         match self {
+//             Self::Leaf(_) => panic!(),
+//             Self::PageId(page_id) => page_id.clone(),
+//         }
+//     }
+// }
 
 
 pub trait SlotBytes {
@@ -102,18 +102,18 @@ impl SlotBytes for String {
     }
 }
 
-impl<V: SlotBytes> SlotBytes for SlotValue<V> {
-    fn into_bytes(&self) -> Vec<u8> {
-        match self {
-            SlotValue::Leaf(v) => v.into_bytes(), 
-            SlotValue::PageId(_) => panic!("SlotValue into_bytes: cant PageId"),
-        }
-    }
+// impl<V: SlotBytes> SlotBytes for SlotValue<V> {
+//     fn into_bytes(&self) -> Vec<u8> {
+//         match self {
+//             SlotValue::Leaf(v) => v.into_bytes(), 
+//             SlotValue::PageId(_) => panic!("SlotValue into_bytes: cant PageId"),
+//         }
+//     }
 
-    fn from_bytes<'a>(bytes: &'a [u8], node_type: NodeType) -> Self {
-        match node_type {
-            NodeType::Leaf => SlotValue::Leaf(V::from_bytes(bytes, node_type)), 
-            NodeType::Branch => SlotValue::PageId(u16::from_bytes(bytes, node_type)),
-        }
-    }
-}
+//     fn from_bytes<'a>(bytes: &'a [u8], node_type: NodeType) -> Self {
+//         match node_type {
+//             NodeType::Leaf => SlotValue::Leaf(V::from_bytes(bytes, node_type)), 
+//             NodeType::Branch => SlotValue::PageId(u16::from_bytes(bytes, node_type)),
+//         }
+//     }
+// }
