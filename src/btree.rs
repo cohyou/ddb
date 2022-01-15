@@ -154,7 +154,7 @@ impl<K: Ord + SlotBytes + std::fmt::Debug, V: SlotBytes + Clone + Debug> BTree<K
                         }
                     }
                 }
-                dbg!(&keys, &leaf.slotted);
+
                 if !new_slot_inserted {
                     let _ = slotted.insert(&slot);
                 }
