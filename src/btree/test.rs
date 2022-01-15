@@ -91,7 +91,7 @@ fn test_search_split() {
 
     let _ = remove_file(p);
     assert_eq!(btree.search(&33), Ok("あ".to_string()));
-    // assert_eq!(btree.search(&44), Ok("あふれちゃう".to_string()));
+    assert_eq!(btree.search(&44), Ok("あふれちゃう".to_string()));
 }
 
 fn file_bytes(path: impl AsRef<Path>) -> Vec<u8> {

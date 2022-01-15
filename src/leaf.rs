@@ -20,6 +20,7 @@ impl<K: Ord + SlotBytes, V: SlotBytes> Leaf<K, V> {
 
 impl<K: Ord + SlotBytes + Debug, V: SlotBytes + Debug> Debug for Leaf<K, V> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        let _  = write!(f, "({:?}): ", self.slotted.page.id);
         f.debug_list()
             .entries(&self.slotted.slots())
             .finish()

@@ -135,7 +135,7 @@ impl<K: Ord + SlotBytes + std::fmt::Debug, V: SlotBytes + Clone + Debug> BTree<K
     {
         let new_page = self.storage.borrow_mut().allocate_page();
 
-        match Node::new(new_page) {
+        match Node::create(new_page) {
             Node::Leaf(mut leaf) => {
                 let mut keys = slotted.keys();
                 keys.push(slot.key.clone());
@@ -154,6 +154,7 @@ impl<K: Ord + SlotBytes + std::fmt::Debug, V: SlotBytes + Clone + Debug> BTree<K
                         }
                     }
                 }
+                dbg!(&keys, &leaf.slotted);
                 if !new_slot_inserted {
                     let _ = slotted.insert(&slot);
                 }

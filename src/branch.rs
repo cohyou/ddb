@@ -27,6 +27,7 @@ impl<K: Ord + SlotBytes> Branch<K> {
 
 impl<K: Ord + SlotBytes + Debug> Debug for Branch<K> {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        let _  = write!(f, "({:?}): ", self.slotted.page.id);
         for (k, v) in self.slotted.slots() {
             let _ = write!(f, "{}|<{:?}", v, k);
         }
