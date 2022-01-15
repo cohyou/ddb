@@ -1,4 +1,5 @@
 pub mod pointer;
+mod fmt;
 #[cfg(test)]
 mod test;
 
@@ -18,14 +19,14 @@ use crate::slotted::pointer::Pointer;
 
 const HEADER_LEN: usize = 8;
 
-pub struct Slotted<K: Ord + SlotBytes, V, P: Pointer> {
+pub struct Slotted<K: Ord + SlotBytes, V: SlotBytes, P: Pointer> {
     pub page: Page,
     _phantom_key: PhantomData<fn() -> K>,
     _phantom_value: PhantomData<fn() -> V>,
     _phantom_pointer: PhantomData<fn() -> P>,
 }
 
-impl<K: Ord + SlotBytes, V, P: Pointer> Slotted<K, V, P> {
+impl<K: Ord + SlotBytes, V: SlotBytes, P: Pointer> Slotted<K, V, P> {
     pub fn new(page: Page) -> Self {
         Slotted::<K, V, P> {
             page: page, 
@@ -50,7 +51,7 @@ impl<K: Ord + SlotBytes, V, P: Pointer> Slotted<K, V, P> {
             return Err(Error::FullLeaf)
         } 
         self.add_slot(slot);
-        self.insert_pointer(&slot.key);
+        self.insert_pointer(&slot);
         self.increment_number_of_pointer();
         Ok(())
     }
@@ -91,20 +92,40 @@ impl<K: Ord + SlotBytes, V, P: Pointer> Slotted<K, V, P> {
     pub fn set_node_type(&mut self, node_type: NodeType) {
         let current = self.page.u16_bytes(0);
         match node_type {
-            NodeType::Leaf => self.page.set_u16_bytes(0, current & 0x0000),
-            NodeType::Branch => self.page.set_u16_bytes(0, current | 0x7000),
+            NodeType::Leaf => self.page.set_u16_bytes(0, current & 0x7FFF),
+            NodeType::Branch => self.page.set_u16_bytes(0, current | 0x8000),
         }
     }
 
-    pub fn keys<'a>(&self) -> Vec<K> where K: SlotBytes {
+    pub fn pointers(&self) -> Vec<P> {
+        self.page.bytes[self.pointers_range()].chunks(P::len())
+            .map(|chunk| Self::offset_to_pointer(chunk, 0))
+            .collect::<Vec<_>>()
+    }
+
+    pub fn keys<'a>(&self) -> Vec<K>
+        where K: SlotBytes
+    {
         let range = self.pointers_range();
-        self.page.bytes[range].chunks(pointer_size())
+        self.page.bytes[range].chunks(Self::pointer_size())
             .map(|chunk| Self::offset_to_pointer(chunk, 0))
             .map(|pointer| {
                 let bytes = &self.page.bytes[pointer.key_range()];
                 K::from_bytes(bytes)
             })
-            .collect::<Vec<K>>()
+            .collect::<Vec<_>>()
+    }
+
+    pub fn slots(&self) -> Vec<(K, V)> {
+        let pointers = self.page.bytes[self.pointers_range()].chunks(P::len())
+            .map(|chunk| Self::offset_to_pointer(chunk, 0))
+            .collect::<Vec<P>>();
+
+        pointers.iter().map(|pointer| {
+            let key = K::from_bytes(&self.page.bytes[pointer.key_range()]);
+            let value = V::from_bytes(&self.page.bytes[pointer.value_range()]);
+            (key, value)
+        }).collect::<Vec<_>>()
     }
 
     fn is_full(&self, slot: &Slot<K, V>) -> bool where
@@ -118,14 +139,15 @@ impl<K: Ord + SlotBytes, V, P: Pointer> Slotted<K, V, P> {
         if end_of_free_space < bytes.len() {
             return true;
         }
-        let offset_slot = end_of_free_space - bytes.len() - pointer_size();
+        let offset_slot = end_of_free_space - bytes.len() - Self::pointer_size();
 
         offset_slot < offset_pointer
     }
 
-    fn add_slot(&mut self, slot: &Slot<K, V>) where 
-        K: SlotBytes + Clone,
-        V: SlotBytes + Clone,
+    fn add_slot(&mut self, slot: &Slot<K, V>)
+        where 
+            K: SlotBytes + Clone,
+            V: SlotBytes + Clone,
     {
         let bytes = slot.to_bytes();
         let end_of_free_space = self.end_of_free_space() as usize;
@@ -134,19 +156,26 @@ impl<K: Ord + SlotBytes, V, P: Pointer> Slotted<K, V, P> {
         self.set_end_of_free_space(offset.try_into().unwrap());
     }
 
-    fn insert_pointer(&mut self, key: &K) where K: SlotBytes {
+    fn insert_pointer(&mut self, slot: &Slot<K, V>)
+        where K: SlotBytes + Clone,
+              V: SlotBytes + Clone,
+    {
         let keys = self.keys();
         let insertion_point = 
             if let Some(p) = keys.iter()
-                .position(|k| key < k ) {
+                .position(|k| &slot.key < k ) {
                 p
             } else {
                 keys.len()
             };
-        let start_offset = pointer_offset(insertion_point);
+        let start_offset = Self::pointer_offset(insertion_point);
         let end_offset = self.start_of_free_space();
-        self.page.bytes.copy_within(start_offset..end_offset, start_offset + pointer_size());
-        self.page.set_u16_bytes(start_offset.into(), self.end_of_free_space())
+        self.page.bytes.copy_within(start_offset..end_offset, start_offset + Self::pointer_size());
+
+        let mut pointer_bytes = self.end_of_free_space().to_le_bytes().to_vec();
+        pointer_bytes.append(&mut slot.key_size().to_le_bytes().to_vec());
+        pointer_bytes.append(&mut slot.value_size().to_le_bytes().to_vec());
+        self.page.set_bytes(start_offset.into(), pointer_bytes);
     }
 
     fn delete_slot(&mut self, pointer: &impl Pointer) {
@@ -161,26 +190,26 @@ impl<K: Ord + SlotBytes, V, P: Pointer> Slotted<K, V, P> {
     }
 
     fn delete_pointer(&mut self, pointer_index: usize) {
-        let start_of_deleting_pointer = pointer_offset(pointer_index);
-        let start_of_pointers = start_of_deleting_pointer + pointer_size();
+        let start_of_deleting_pointer = Self::pointer_offset(pointer_index);
+        let start_of_pointers = start_of_deleting_pointer + Self::pointer_size();
         let end_of_pointers = self.start_of_free_space();
         let range = start_of_pointers..end_of_pointers;
         let bytes = &mut self.page.bytes;
         bytes.copy_within(range, start_of_deleting_pointer);
-        bytes[end_of_pointers - pointer_size()..end_of_pointers].fill(0);
+        bytes[end_of_pointers - Self::pointer_size()..end_of_pointers].fill(0);
     }
 
     fn update_slot_offsets(&mut self, pointer: impl Pointer) {
         let range = self.pointers_range();
-        let rewriting_indices = self.page.bytes[range].chunks(pointer_size())
+        let rewriting_indices = self.page.bytes[range].chunks(Self::pointer_size())
             .map(|chunk| Self::offset_to_pointer(chunk, 0))
             .enumerate()
             .filter(|(_, ptr)| ptr.slot_offset() < pointer.slot_offset())
             .collect::<Vec<_>>();
 
         for (ptr_index, ptr) in rewriting_indices.iter() {
-            let ptr_offset = pointer_offset(ptr_index.clone());
-            self.page.set_u16_bytes(ptr_offset, ptr.slot_offset() + ptr.slot_size());
+            let ptr_offset = Self::pointer_offset(ptr_index.clone());
+            self.page.set_u16_bytes(ptr_offset, ptr.slot_offset() + pointer.slot_size());
         }
     }
 
@@ -191,7 +220,7 @@ impl<K: Ord + SlotBytes, V, P: Pointer> Slotted<K, V, P> {
     }
 }
 
-impl<K, V, P: Pointer> Slotted<K, V, P>
+impl<K, V: SlotBytes, P: Pointer> Slotted<K, V, P>
     where K: Ord + SlotBytes 
 {
     fn search_pointer(&self, key: &K) -> Option<usize> {
@@ -199,7 +228,7 @@ impl<K, V, P: Pointer> Slotted<K, V, P>
     }
 
     fn pointer_index_to_pointer(&self, key_index: usize) -> P {
-        let pointer = pointer_offset(key_index.clone());
+        let pointer = Self::pointer_offset(key_index.clone());
         Self::offset_to_pointer(&self.page.bytes, pointer)
     }
 
@@ -214,7 +243,7 @@ impl<K, V, P: Pointer> Slotted<K, V, P>
 
     fn start_of_free_space(&self) -> usize {
         let number_of_pointer = self.number_of_pointer();
-        pointer_offset(number_of_pointer as usize)
+        Self::pointer_offset(number_of_pointer as usize)
     }
 
     fn increment_number_of_pointer(&mut self) {
@@ -228,7 +257,9 @@ impl<K, V, P: Pointer> Slotted<K, V, P>
     }
 
     fn set_number_of_pointer(&mut self, number: u16) {
-        self.page.set_u16_bytes(0, number);
+        let number = number & 0x7FFF;
+        let current = self.page.u16_bytes(0) & 0x8000;
+        self.page.set_u16_bytes(0, number | current);
     }
 
     fn set_end_of_free_space(&mut self, number: u16) {
@@ -236,20 +267,20 @@ impl<K, V, P: Pointer> Slotted<K, V, P>
     }
 
     fn number_of_pointer(&self) -> u16 {
-        self.page.u16_bytes(0) - 0x7000
+        self.page.u16_bytes(0) & 0x7FFF
     }
 
     fn end_of_free_space(&self) -> u16 {
         self.page.u16_bytes(2)
     }
-}
 
-fn pointer_offset(index: usize) -> usize {
-    HEADER_LEN + pointer_size() * index
-}
+    fn pointer_offset(index: usize) -> usize {
+        HEADER_LEN + Self::pointer_size() * index
+    }
 
-fn pointer_size() -> usize {
-    crate::slotted::pointer::LeafPointer::len()
+    fn pointer_size() -> usize {
+        P::len()
+    }    
 }
 
 fn range(start: usize, len: usize) -> Range<usize> {

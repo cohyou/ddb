@@ -1,4 +1,7 @@
 use std::convert::TryInto;
+use std::fmt::Debug;
+use std::fmt::Error;
+use std::fmt::Formatter;
 use std::mem::size_of;
 use std::ops::Range;
 
@@ -48,6 +51,17 @@ impl Pointer for LeafPointer {
     fn value_size(&self) -> u16 { self.value_size }
 }
 
+impl Debug for LeafPointer {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        f.debug_tuple("")
+            .field(&self.slot_offset)
+            .field(&self.key_size)
+            .field(&self.value_size)
+            .finish()
+    }
+}
+
+#[derive(Debug)]
 pub struct BranchPointer {
     slot_offset: u16,
     key_size: u16,
