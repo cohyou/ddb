@@ -1,22 +1,22 @@
-use crate::node::Slotted;
 use crate::node::NodeType;
+use crate::slotted::Slotted;
 use crate::slot::SlotBytes;
+use crate::slotted::pointer::BranchPointer;
 
-
-pub struct Branch<K: Ord + SlotBytes> { pub node: Slotted<K, u16> }
+pub struct Branch<K: Ord + SlotBytes> { pub node: Slotted<K, u16, BranchPointer> }
 
 impl<K: Ord + SlotBytes> Branch<K> {
-    pub fn new(mut node: Slotted<K, u16>) -> Self {
+    pub fn new(mut node: Slotted<K, u16, BranchPointer>) -> Self {
         node.set_node_type(NodeType::Branch);
         Branch { node: node }
     }
 
     pub fn set_max_page_id(&mut self, number: u16) {
-        self.node.page.set_u16_bytes(6, number);
+        self.node.page.set_u16_bytes(4, number);
     }
 
     pub fn max_page_id(&self) -> u16 {
-        self.node.page.u16_bytes(6)
+        self.node.page.u16_bytes(4)
     }
 }
 
@@ -29,6 +29,3 @@ struct Header {
     _padding3: u16,
 }
 
-#[repr(C)]
-#[derive(Debug)]
-struct Pointer(pub u16);

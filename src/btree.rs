@@ -1,15 +1,18 @@
 use std::cell::RefCell;
 use std::path::Path;
+
 use crate::error::Error;
 use crate::branch::Branch;
 use crate::leaf::Leaf;
-use crate::node::Slotted;
 use crate::node::Node;
 use crate::node::NodeType;
 use crate::page::Page;
 use crate::slot::Slot;
 use crate::slot::SlotBytes;
-// use crate::slot::SlotValue;
+use crate::slotted::Slotted;
+use crate::slotted::pointer::BranchPointer;
+use crate::slotted::pointer::LeafPointer;
+use crate::slotted::pointer::Pointer;
 use crate::storage::Storage;
 
 
@@ -82,12 +85,12 @@ impl<K: Ord + SlotBytes + std::fmt::Debug, V: Clone> BTree<K, V> {
 
     pub fn delete(&mut self, key: &K) where K: SlotBytes {
         if let Some(root_page_id) = self.root_page_id {
-            let mut node = self.read_node(root_page_id);
-            match node.node_type() {
-                NodeType::Leaf => {
-                    let _ = node.delete(key);
+            let node = self.read_node(root_page_id);
+            match node {
+                Node::Leaf(mut leaf) => {
+                    let _ = leaf.node.delete(key);
                 },
-                NodeType::Branch => unimplemented!(),
+                Node::Branch(_branch) => unimplemented!(),
             }
         }
     }
@@ -105,7 +108,7 @@ impl<K: Ord + SlotBytes + std::fmt::Debug, V: Clone> BTree<K, V> {
                 let slot = Slot::new(key, value);
                 match leaf.node.insert(&slot) {
                     Ok(_) => {
-                        let mut leaf = Leaf::new(leaf.node);
+                        // let mut leaf = Leaf::new(leaf.node);
                         self.write_leaf(&mut leaf);
                     },
                     Err(_) => {
@@ -115,12 +118,9 @@ impl<K: Ord + SlotBytes + std::fmt::Debug, V: Clone> BTree<K, V> {
 
             },
             Node::Branch(branch) => {
-                // let node = Slotted::<K, u16>::new(page);
-                // let branch = Branch::new(node);
                 breadcrumb.push(branch.node.page.id);
                 for k in branch.node.keys() {
                     if key < k {
-                        // let child_page_id = branch.node.search(&k).map(|v| v.page_id()).unwrap();
                         let child_page_id = branch.node.search(&k).unwrap();
                         return self.insert_internal(child_page_id, key, value, breadcrumb);
                     }
@@ -130,17 +130,14 @@ impl<K: Ord + SlotBytes + std::fmt::Debug, V: Clone> BTree<K, V> {
         }
     }
 
-    fn split<Val>(&mut self, slotted: &mut Slotted<K, Val>, slot: Slot<K, Val>, breadcrumb: &mut Vec<u16>) where
-        K: SlotBytes + Clone,
-        Val: SlotBytes + Clone, 
+    fn split<Val, P: Pointer>(&mut self, slotted: &mut Slotted<K, Val, P>, slot: Slot<K, Val>, breadcrumb: &mut Vec<u16>)
+        where K: SlotBytes + Clone,
+              Val: SlotBytes + Clone, 
     {
         let new_page = self.storage.borrow_mut().allocate_page();
 
         match Node::new(new_page) {
             Node::Leaf(mut leaf) => {
-                // let mut new_node = Slotted::<K, Val>::create(new_page);
-                // new_node.set_node_type(node.node_type());
-
                 let mut keys = slotted.keys();
                 keys.push(slot.key.clone());
                 keys.sort();
@@ -172,7 +169,7 @@ impl<K: Ord + SlotBytes + std::fmt::Debug, V: Clone> BTree<K, V> {
                     self.storage.borrow_mut().read_page(&mut page);
                     page
                 };
-                let mut parent_branch = Branch::new(Slotted::<K, u16>::create(page));
+                let mut parent_branch = Branch::new(Slotted::<K, u16, BranchPointer>::create(page));
 
                 let split_key = keys.split_at(keys.len() / 2).1.iter().next().unwrap();
 
@@ -203,7 +200,7 @@ impl<K: Ord + SlotBytes + std::fmt::Debug, V: Clone> BTree<K, V> {
 
     fn create_leaf(&self) -> Leaf<K, V> {
         let page = self.storage.borrow_mut().allocate_page();
-        let mut node = Slotted::<K, V>::create(page);
+        let mut node = Slotted::<K, V, LeafPointer>::create(page);
         node.set_node_type(NodeType::Leaf);
         Leaf { node: node }
     }
@@ -212,10 +209,10 @@ impl<K: Ord + SlotBytes + std::fmt::Debug, V: Clone> BTree<K, V> {
         self.storage.borrow_mut().write_page(&mut leaf.node.page);
     }
 
-    fn read_node(&self, page_id: u16) -> Slotted<K, V> {
+    fn read_node(&self, page_id: u16) -> Node<K, V> {
         let mut page = Page::new(page_id);
         self.storage.borrow_mut().read_page(&mut page);
-        Slotted::<K, V>::new(page)
+        Node::new(page)
     }
 
     fn set_root_page_id(&mut self, page_id: u16) {
@@ -234,6 +231,7 @@ mod test {
 
     use crate::btree::BTree;
     use crate::error::Error;
+    use crate::node::Node;
     use crate::page::PAGE_SIZE;
     use crate::slot::Slot;
 
@@ -291,9 +289,14 @@ mod test {
         btree.insert(66u16, "い".to_string());
         // btree.insert(11u16, "ぽ".to_string());
 
-        let mut node = btree.read_node(btree.root_page_id.unwrap());
-        let mut breadcrumb = vec![];
-        btree.split(&mut node, Slot::new(44u16, "あふれちゃう".to_string()), &mut breadcrumb);
+        match btree.read_node(btree.root_page_id.unwrap()) {
+            Node::Leaf(mut leaf) => {
+                let mut breadcrumb = vec![];
+                btree.split(&mut leaf.node, Slot::new(44u16, "あふれちゃう".to_string()), &mut breadcrumb);
+            },
+            Node::Branch(_) => panic!(""),
+        }
+
 
         let _ = remove_file(p);
         // assert_eq!(res, []);

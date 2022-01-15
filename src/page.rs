@@ -6,8 +6,6 @@ use std::io::SeekFrom;
 use std::io::Write;
 use std::fs::File;
 
-// use crate::node::NodeType;
-
 
 pub const PAGE_SIZE: usize = 64;
 
@@ -20,13 +18,10 @@ impl Page {
         Page { id: id, bytes: [0; PAGE_SIZE] }
     }
 
-    // pub fn node_type(&self) -> NodeType {
-    //     match self.u16_bytes(4) {
-    //         u16::MIN => NodeType::Leaf,
-    //         u16::MAX => NodeType::Branch,
-    //         v @ _ => panic!("invalid node type value: {}", v),
-    //     }
-    // }
+    pub fn i16_bytes(&self, offset: usize) -> i16 {
+        let bytes = &self.bytes[offset..offset + 2];
+        i16::from_le_bytes(bytes.try_into().unwrap())
+    }
 
     pub fn set_u16_bytes(&mut self, offset: usize, value: u16) {
         let bytes = value.to_le_bytes();

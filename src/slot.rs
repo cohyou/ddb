@@ -1,7 +1,5 @@
 use std::convert::TryInto;
 
-use crate::node::NodeType;
-
 
 pub struct Slot<K, V> where
     K: SlotBytes + Clone,
@@ -26,32 +24,10 @@ impl<K, V> Slot<K, V> where
     }
 }
 
-// #[allow(dead_code)]
-// pub enum SlotValue<V> {
-//     Leaf(V),
-//     PageId(u16),
-// }
-
-// impl<V: Clone> SlotValue<V> {
-//     pub fn leaf_value(&self) -> V {
-//         match self {
-//             Self::Leaf(v) => v.clone(),
-//             Self::PageId(_) => panic!(),
-//         }
-//     }
-
-//     pub fn page_id(&self) -> u16 {
-//         match self {
-//             Self::Leaf(_) => panic!(),
-//             Self::PageId(page_id) => page_id.clone(),
-//         }
-//     }
-// }
-
 
 pub trait SlotBytes {
     fn into_bytes(&self) -> Vec<u8>;
-    fn from_bytes(bytes: &[u8], node_type: NodeType) -> Self;
+    fn from_bytes(bytes: &[u8]) -> Self;
 }
 
 impl SlotBytes for u8 {
@@ -59,7 +35,7 @@ impl SlotBytes for u8 {
         vec![1, 0, self.clone()]
     }
 
-    fn from_bytes(bytes: &[u8], _node_type: NodeType) -> Self {
+    fn from_bytes(bytes: &[u8]) -> Self {
         bytes[0]
     }
 }
@@ -71,7 +47,7 @@ impl SlotBytes for u16 {
         res
     }
 
-    fn from_bytes(bytes: &[u8], _node_type: NodeType) -> Self {
+    fn from_bytes(bytes: &[u8]) -> Self {
         u16::from_le_bytes(bytes.try_into().unwrap())
     }
 }
@@ -83,7 +59,7 @@ impl SlotBytes for u32 {
         res
     }
 
-    fn from_bytes(_bytes: &[u8], _node_type: NodeType) -> Self {
+    fn from_bytes(_bytes: &[u8]) -> Self {
         unimplemented!()
     }
 }
@@ -97,23 +73,8 @@ impl SlotBytes for String {
         res
     }
 
-    fn from_bytes<'a>(bytes: &'a [u8], _node_type: NodeType) -> Self {
+    fn from_bytes<'a>(bytes: &'a [u8]) -> Self {
         String::from_utf8(bytes.to_vec()).unwrap()
     }
 }
 
-// impl<V: SlotBytes> SlotBytes for SlotValue<V> {
-//     fn into_bytes(&self) -> Vec<u8> {
-//         match self {
-//             SlotValue::Leaf(v) => v.into_bytes(), 
-//             SlotValue::PageId(_) => panic!("SlotValue into_bytes: cant PageId"),
-//         }
-//     }
-
-//     fn from_bytes<'a>(bytes: &'a [u8], node_type: NodeType) -> Self {
-//         match node_type {
-//             NodeType::Leaf => SlotValue::Leaf(V::from_bytes(bytes, node_type)), 
-//             NodeType::Branch => SlotValue::PageId(u16::from_bytes(bytes, node_type)),
-//         }
-//     }
-// }

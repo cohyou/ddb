@@ -1,11 +1,13 @@
-use crate::node::Slotted;
 use crate::node::NodeType;
+use crate::slotted::Slotted;
 use crate::slot::SlotBytes;
+use crate::slotted::pointer::LeafPointer;
 
-pub struct Leaf<K: Ord + SlotBytes, V> { pub node: Slotted<K, V> }
+
+pub struct Leaf<K: Ord + SlotBytes, V> { pub node: Slotted<K, V, LeafPointer> }
 
 impl<K: Ord + SlotBytes, V> Leaf<K, V> {
-    pub fn new(mut node: Slotted<K, V>) -> Self {
+    pub fn new(mut node: Slotted<K, V, LeafPointer>) -> Self {
         node.set_node_type(NodeType::Leaf);
         Leaf { node: node }
     }
@@ -20,6 +22,3 @@ struct Header {
     _padding3: u16,
 }
 
-#[repr(C)]
-#[derive(Debug, PartialEq, Clone, Copy)]
-struct Pointer(pub u16);
