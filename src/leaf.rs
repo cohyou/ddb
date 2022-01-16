@@ -8,11 +8,11 @@ use crate::slot::SlotBytes;
 use crate::slotted::pointer::LeafPointer;
 
 
-pub struct Leaf<K: Ord + SlotBytes, V: SlotBytes> {
+pub struct Leaf<K: Ord + SlotBytes + Debug, V: SlotBytes + Debug> {
     pub slotted: Slotted<K, V, LeafPointer>
 }
 
-impl<K: Ord + SlotBytes, V: SlotBytes> Leaf<K, V> {
+impl<K: Ord + SlotBytes + Debug, V: SlotBytes + Debug> Leaf<K, V> {
     pub fn new(mut slotted: Slotted<K, V, LeafPointer>) -> Self {
         slotted.set_node_type(NodeType::Leaf);
         Leaf { slotted: slotted }

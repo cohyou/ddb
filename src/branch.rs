@@ -8,10 +8,11 @@ use crate::slot::SlotBytes;
 use crate::slotted::pointer::BranchPointer;
 
 
-pub struct Branch<K: Ord + SlotBytes> { pub slotted: Slotted<K, u16, BranchPointer> }
+pub struct Branch<K: Ord + SlotBytes + Debug> { pub slotted: Slotted<K, u16, BranchPointer> }
 
-impl<K: Ord + SlotBytes> Branch<K> {
+impl<K: Ord + SlotBytes + Debug> Branch<K> {
     pub fn new(mut slotted: Slotted<K, u16, BranchPointer>) -> Self {
+        
         slotted.set_node_type(NodeType::Branch);
         Branch { slotted: slotted }
     }

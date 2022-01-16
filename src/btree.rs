@@ -32,7 +32,7 @@ impl<K, V> BTree<K, V>
 {
     pub fn create(file_path: impl AsRef<Path>) -> Self {
         let mut storage = Storage::from_path(file_path);
-        // dbg!(&storage.next_page_id);
+
         let root_page_id = if storage.next_page_id > 0 {
             let mut meta_page = Page::new(0);
             storage.read_page(&mut meta_page);
@@ -123,7 +123,7 @@ impl<K, V> BTree<K, V>
             K: SlotBytes + Clone,
             Val: SlotBytes + Clone,
     {
-        println!("insert_internal: page_id: {:?} key: {:?} value: {:?} breadcrumb: {:?}", &page_id, &key, &value, &breadcrumb);
+        // println!("insert_internal: page_id: {:?} key: {:?} value: {:?} breadcrumb: {:?}", &page_id, &key, &value, &breadcrumb);
         let mut page = Page::new(page_id);
         self.storage.borrow_mut().read_page(&mut page);
 
@@ -156,7 +156,7 @@ impl<K, V> BTree<K, V>
         where K: SlotBytes + Clone,
               Val: SlotBytes + Clone, 
     {
-        println!("split: slotted: {:?} slot: {:?} breadcrumb: {:?}", &slotted, &slot, &breadcrumb);
+        // println!("split: slotted: {:?} slot: {:?} breadcrumb: {:?}", &slotted.slots(), &slot, &breadcrumb);
         let new_page = self.storage.borrow_mut().allocate_page();
         match Node::create(new_page) {
             Node::Leaf(mut leaf) => {
@@ -181,7 +181,7 @@ impl<K, V> BTree<K, V>
                     let _ = slotted.insert(&slot);
                 }
 
-                println!("splitted! {:?} {:?}", &slotted, &leaf);
+                // println!("splitted! {:?} {:?}", &slotted.slots(), &leaf);
 
                 let mut parent_branch = if breadcrumb.is_empty() {
                     // add new branch
@@ -197,9 +197,11 @@ impl<K, V> BTree<K, V>
                     let parent_slotted = Slotted::<K, u16, BranchPointer>::new(page);
                     Branch::new(parent_slotted)
                 };
-                println!("parent_branch: {:?}", &parent_branch);
+                // println!("parent_branch: {:?}", &parent_branch);
 
-                let split_key = keys.split_at(keys.len() / 2).1.iter().next().unwrap();
+                let mut keys_iter = keys.split_at(keys.len() / 2).1.iter();
+                let split_key = keys_iter.next().unwrap();
+
                 if breadcrumb.is_empty() {
                     let _ = parent_branch.slotted.insert(&Slot::new(split_key.clone(), slotted.page.id));
 
@@ -208,9 +210,16 @@ impl<K, V> BTree<K, V>
                 } else {
                     breadcrumb.pop();
                     let _ = self.insert_page_id_into_branch(&mut parent_branch, split_key.clone(), slotted.page.id, breadcrumb);
-                    println!("slotted.page.id: {:?} parent_branch.max_page_id: {:?}", slotted.page.id, parent_branch.max_page_id());
+                    // println!("split_key: {:?} slotted.page.id: {:?} parent_branch.max_page_id: {:?}", split_key, slotted.page.id, parent_branch.max_page_id());
                     if slotted.page.id == parent_branch.max_page_id() {
                         parent_branch.set_max_page_id(leaf.slotted.page.id);
+                    } else {
+                        let slots = parent_branch.slotted.slots();
+                        let rewriting_key = slots.iter().rfind(|(_k, v)| v == &slotted.page.id).unwrap();
+                        // println!("rewriting_key: {:?}", rewriting_key);
+
+                        let _ = parent_branch.slotted.delete(&rewriting_key.0);
+                        let _ = parent_branch.slotted.insert(&Slot::new(rewriting_key.0.clone(), leaf.slotted.page.id));
                     }
                 }
 
@@ -228,9 +237,11 @@ impl<K, V> BTree<K, V>
         where
             K: SlotBytes + Clone,
     {
+        // println!("insert_page_id_into_branch: branch: {:?} key: {:?} value: {:?}", branch, key, value);
         let slot = Slot::new(key, value);
         match branch.slotted.insert(&slot) {
             Ok(_) => {
+                // println!("{:?}", branch);
                 self.storage.borrow_mut().write_page(&mut branch.slotted.page);
             },
             Err(_) => {
@@ -247,7 +258,7 @@ impl<K, V> BTree<K, V>
         Leaf { slotted: slotted }
     }
 
-    fn write_leaf<Val: SlotBytes>(&self, leaf: &mut Leaf<K, Val>) {
+    fn write_leaf<Val: SlotBytes + Debug>(&self, leaf: &mut Leaf<K, Val>) {
         self.storage.borrow_mut().write_page(&mut leaf.slotted.page);
     }
 

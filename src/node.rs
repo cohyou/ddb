@@ -11,7 +11,7 @@ use crate::slotted::pointer::BranchPointer;
 use crate::slotted::pointer::LeafPointer;
 
 #[derive(Debug)]
-pub enum Node<K: Ord + SlotBytes, V: SlotBytes> {
+pub enum Node<K: Ord + SlotBytes + Debug, V: SlotBytes + Debug> {
     Leaf(Leaf<K, V>),
     Branch(Branch<K>),
 }

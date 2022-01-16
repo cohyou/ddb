@@ -5,6 +5,7 @@ mod test;
 
 
 use std::convert::TryInto;
+use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::ops::Range;
 
@@ -19,14 +20,14 @@ use crate::slotted::pointer::Pointer;
 
 const HEADER_LEN: usize = 8;
 
-pub struct Slotted<K: Ord + SlotBytes, V: SlotBytes, P: Pointer> {
+pub struct Slotted<K: Ord + SlotBytes + Debug, V: SlotBytes + Debug, P: Pointer + Debug> {
     pub page: Page,
     _phantom_key: PhantomData<fn() -> K>,
     _phantom_value: PhantomData<fn() -> V>,
     _phantom_pointer: PhantomData<fn() -> P>,
 }
 
-impl<K: Ord + SlotBytes, V: SlotBytes, P: Pointer> Slotted<K, V, P> {
+impl<K: Ord + SlotBytes + Debug, V: SlotBytes + Debug, P: Pointer+ Debug> Slotted<K, V, P> {
     pub fn new(page: Page) -> Self {
         Slotted::<K, V, P> {
             page: page, 
@@ -50,9 +51,13 @@ impl<K: Ord + SlotBytes, V: SlotBytes, P: Pointer> Slotted<K, V, P> {
         if self.is_full(slot) {
             return Err(Error::FullLeaf)
         } 
+        // println!("insert 0: {:?}", &self);
         self.add_slot(slot);
+        // println!("insert 1: {:?}", &self);
         self.insert_pointer(&slot);
+        // println!("insert 2: {:?}", &self);
         self.increment_number_of_pointer();
+        // println!("insert 3: {:?}", &self);
         Ok(())
     }
 
@@ -60,7 +65,6 @@ impl<K: Ord + SlotBytes, V: SlotBytes, P: Pointer> Slotted<K, V, P> {
         match self.search_slot_offset(key) {
             Some(pointer) => {
                 let bytes = &self.page.bytes[pointer.value_range()];
-                // dbg!(pointer.value_size());
                 Some(V::from_bytes(bytes))
             },
             None => None,
@@ -173,10 +177,8 @@ impl<K: Ord + SlotBytes, V: SlotBytes, P: Pointer> Slotted<K, V, P> {
         let end_offset = self.start_of_free_space();
         self.page.bytes.copy_within(start_offset..end_offset, start_offset + Self::pointer_size());
 
-        let mut pointer_bytes = self.end_of_free_space().to_le_bytes().to_vec();
-        pointer_bytes.append(&mut slot.key_size().to_le_bytes().to_vec());
-        pointer_bytes.append(&mut slot.value_size().to_le_bytes().to_vec());
-        self.page.set_bytes(start_offset.into(), pointer_bytes);
+        let pointer = P::new(self.end_of_free_space(), slot.key_size(), slot.value_size());
+        self.page.set_bytes(start_offset.into(), pointer.to_bytes());
     }
 
     fn delete_slot(&mut self, pointer: &impl Pointer) {
@@ -221,7 +223,7 @@ impl<K: Ord + SlotBytes, V: SlotBytes, P: Pointer> Slotted<K, V, P> {
     }
 }
 
-impl<K, V: SlotBytes, P: Pointer> Slotted<K, V, P>
+impl<K: Debug, V: SlotBytes + Debug, P: Pointer + Debug> Slotted<K, V, P>
     where K: Ord + SlotBytes 
 {
     fn search_pointer(&self, key: &K) -> Option<usize> {
