@@ -78,6 +78,6 @@ impl Pointer for BranchPointer {
         BranchPointer { slot_offset: offset, key_size: key_size }
     }
     fn slot_offset(&self) -> u16 { self.slot_offset }
-    fn key_size(&self) -> u16 { self.key_size } 
+    fn key_size(&self) -> u16 { self.key_size }
     fn value_size(&self) -> u16 { 2 }
 }

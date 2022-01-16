@@ -8,6 +8,7 @@ use std::path::Path;
 use crate::error::Error;
 use crate::branch::Branch;
 use crate::leaf::Leaf;
+use crate::meta::Meta;
 use crate::node::Node;
 use crate::node::NodeType;
 use crate::page::Page;
@@ -25,10 +26,26 @@ pub struct BTree<K, V> {
     storage: RefCell<Storage<K, V>>,
 }
 
-impl<K: Ord + SlotBytes + std::fmt::Debug, V: SlotBytes + Clone + Debug> BTree<K, V> {
+impl<K, V> BTree<K, V>
+    where K: Ord + SlotBytes + Debug,
+          V: SlotBytes + Clone + Debug,
+{
     pub fn create(file_path: impl AsRef<Path>) -> Self {
-        let storage = Storage::from_path(file_path);
-        BTree { root_page_id: Default::default(), storage: RefCell::new(storage) }
+        let mut storage = Storage::from_path(file_path);
+        // dbg!(&storage.next_page_id);
+        let root_page_id = if storage.next_page_id > 0 {
+            let mut meta_page = Page::new(0);
+            storage.read_page(&mut meta_page);
+            let meta = Meta::new(meta_page);    
+            Some(meta.root_page_id())
+        } else {
+            Default::default()
+        };
+
+        BTree {
+            root_page_id: root_page_id,
+            storage: RefCell::new(storage),
+        }
     }
 
     pub fn search(&self, key: &K) -> Result<V, Error> where 
@@ -51,11 +68,18 @@ impl<K: Ord + SlotBytes + std::fmt::Debug, V: SlotBytes + Clone + Debug> BTree<K
             let mut breadcrumb = vec![];
             self.insert_internal(root_page_id, key, value, &mut breadcrumb);
         } else {
+            let root_page_id = 1;
+            self.root_page_id = Some(root_page_id);
+
+            let meta_page = self.storage.borrow_mut().allocate_page();
+            let mut meta = Meta::new(meta_page);
+            meta.set_root_page_id(root_page_id);
+            self.storage.borrow_mut().write_page(&mut meta.page);
+
             let mut leaf = self.create_leaf();
             let slot = Slot::new(key, value);
             let _ = leaf.slotted.insert(&slot);
             self.write_leaf(&mut leaf);
-            self.root_page_id = Some(0);
         }
     }
 
@@ -93,28 +117,27 @@ impl<K: Ord + SlotBytes + std::fmt::Debug, V: SlotBytes + Clone + Debug> BTree<K
             },
         }
     }
+
     fn insert_internal<Val: Debug>(&mut self, page_id: u16, key: K, value: Val, breadcrumb: &mut Vec<u16>) 
         where
             K: SlotBytes + Clone,
             Val: SlotBytes + Clone,
     {
+        println!("insert_internal: page_id: {:?} key: {:?} value: {:?} breadcrumb: {:?}", &page_id, &key, &value, &breadcrumb);
         let mut page = Page::new(page_id);
         self.storage.borrow_mut().read_page(&mut page);
 
         match Node::new(page) {
             Node::Leaf(mut leaf) => {
-                // let mut node = Slotted::<K, Val>::new(page);
                 let slot = Slot::new(key, value);
                 match leaf.slotted.insert(&slot) {
                     Ok(_) => {
-                        // let mut leaf = Leaf::new(leaf.node);
                         self.write_leaf(&mut leaf);
                     },
                     Err(_) => {
                         self.split(&mut leaf.slotted, slot, breadcrumb);
                     },
                 }
-
             },
             Node::Branch(branch) => {
                 breadcrumb.push(branch.slotted.page.id);
@@ -129,18 +152,17 @@ impl<K: Ord + SlotBytes + std::fmt::Debug, V: SlotBytes + Clone + Debug> BTree<K
         }
     }
 
-    fn split<Val: Debug, P: Pointer>(&mut self, slotted: &mut Slotted<K, Val, P>, slot: Slot<K, Val>, breadcrumb: &mut Vec<u16>)
+    fn split<Val: Debug, P: Pointer + Debug>(&mut self, slotted: &mut Slotted<K, Val, P>, slot: Slot<K, Val>, breadcrumb: &mut Vec<u16>)
         where K: SlotBytes + Clone,
               Val: SlotBytes + Clone, 
     {
+        println!("split: slotted: {:?} slot: {:?} breadcrumb: {:?}", &slotted, &slot, &breadcrumb);
         let new_page = self.storage.borrow_mut().allocate_page();
-
         match Node::create(new_page) {
             Node::Leaf(mut leaf) => {
                 let mut keys = slotted.keys();
                 keys.push(slot.key.clone());
                 keys.sort();
-
                 let mut new_slot_inserted = false;
                 for key in keys.split_at(keys.len() / 2).1.iter().rev() {
                     match slotted.search(key) {
@@ -159,28 +181,37 @@ impl<K: Ord + SlotBytes + std::fmt::Debug, V: SlotBytes + Clone + Debug> BTree<K
                     let _ = slotted.insert(&slot);
                 }
 
-                // add new branch
-                let page = if breadcrumb.is_empty() {
-                    self.storage.borrow_mut().allocate_page()
+                println!("splitted! {:?} {:?}", &slotted, &leaf);
+
+                let mut parent_branch = if breadcrumb.is_empty() {
+                    // add new branch
+                    let page = self.storage.borrow_mut().allocate_page();
+                    let parent_slotted = Slotted::<K, u16, BranchPointer>::create(page);
+                    let mut branch = Branch::new(parent_slotted);
+                    branch.set_max_page_id(leaf.slotted.page.id);
+                    branch
                 } else {
-                    let page_id = breadcrumb.pop().unwrap();
+                    let page_id = breadcrumb[breadcrumb.len() - 1];
                     let mut page = Page::new(page_id);
                     self.storage.borrow_mut().read_page(&mut page);
-                    page
+                    let parent_slotted = Slotted::<K, u16, BranchPointer>::new(page);
+                    Branch::new(parent_slotted)
                 };
-                let mut parent_branch = Branch::new(Slotted::<K, u16, BranchPointer>::create(page));
+                println!("parent_branch: {:?}", &parent_branch);
 
                 let split_key = keys.split_at(keys.len() / 2).1.iter().next().unwrap();
-
                 if breadcrumb.is_empty() {
                     let _ = parent_branch.slotted.insert(&Slot::new(split_key.clone(), slotted.page.id));
 
                     // set root page id
                     self.set_root_page_id(parent_branch.slotted.page.id);
-
-                    parent_branch.set_max_page_id(leaf.slotted.page.id);
                 } else {
-                    let _ = self.insert_internal(parent_branch.slotted.page.id, split_key.clone(), slotted.page.id, breadcrumb);
+                    breadcrumb.pop();
+                    let _ = self.insert_page_id_into_branch(&mut parent_branch, split_key.clone(), slotted.page.id, breadcrumb);
+                    println!("slotted.page.id: {:?} parent_branch.max_page_id: {:?}", slotted.page.id, parent_branch.max_page_id());
+                    if slotted.page.id == parent_branch.max_page_id() {
+                        parent_branch.set_max_page_id(leaf.slotted.page.id);
+                    }
                 }
 
                 self.storage.borrow_mut().write_page(&mut slotted.page);
@@ -189,6 +220,22 @@ impl<K: Ord + SlotBytes + std::fmt::Debug, V: SlotBytes + Clone + Debug> BTree<K
             },
             Node::Branch(_branch) => {
                 unimplemented!()
+            },
+        }
+    }
+
+    fn insert_page_id_into_branch(&mut self, branch: &mut Branch<K>, key: K, value: u16, _breadcrumb: &mut Vec<u16>) 
+        where
+            K: SlotBytes + Clone,
+    {
+        let slot = Slot::new(key, value);
+        match branch.slotted.insert(&slot) {
+            Ok(_) => {
+                self.storage.borrow_mut().write_page(&mut branch.slotted.page);
+            },
+            Err(_) => {
+                unimplemented!();
+                // self.split(&mut branch.slotted, slot, breadcrumb);
             },
         }
     }
@@ -212,6 +259,11 @@ impl<K: Ord + SlotBytes + std::fmt::Debug, V: SlotBytes + Clone + Debug> BTree<K
 
     fn set_root_page_id(&mut self, page_id: u16) {
         self.root_page_id = Some(page_id);
+        let mut page = Page::new(0);
+        self.storage.borrow_mut().read_page(&mut page);
+        let mut meta = Meta::new(page);
+        meta.set_root_page_id(self.root_page_id.unwrap());
+        self.storage.borrow_mut().write_page(&mut meta.page);
     }
 }
 

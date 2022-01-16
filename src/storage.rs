@@ -8,7 +8,7 @@ use crate::page::Page;
 
 
 pub struct Storage<K, V> {
-    next_page_id: u16, 
+    pub next_page_id: u16, 
     file: File,
     _phantom_key: PhantomData<fn() -> K>,
     _phantom_value: PhantomData<fn() -> V>,

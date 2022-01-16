@@ -1,3 +1,4 @@
+use std::fs::File;
 use std::fs::OpenOptions;
 use std::fs::remove_file;
 
@@ -87,11 +88,67 @@ fn test_search_split() {
     btree.insert(33u16, "あ".to_string());
     btree.insert(66u16, "い".to_string());
     btree.insert(44u16, "あふれちゃう".to_string());
+    btree.insert(35u16, "add".to_string());
     println!("{:?}", btree);
 
     let _ = remove_file(p);
     assert_eq!(btree.search(&33), Ok("あ".to_string()));
     assert_eq!(btree.search(&44), Ok("あふれちゃう".to_string()));
+}
+
+#[test]
+fn test_insert_meta() {
+    let p = "test_insert_meta";
+    let mut btree = BTree::<u16, String>::create(p);
+    btree.insert(22u16, "abc".to_string());
+
+    println!("{:?}", btree);
+
+    let _ = remove_file(p);
+    assert!(false);
+}
+
+#[test]
+fn test_read_meta() {
+    let p = "sample/test_read_meta";
+    let mut btree = BTree::<u16, String>::create(p);
+    btree.insert(22u16, "abc".to_string());
+    btree.insert(55u16, "defg".to_string());
+    btree.insert(33u16, "あ".to_string());
+    btree.insert(66u16, "い".to_string());
+    btree.insert(44u16, "あふれちゃう".to_string());
+    println!("{:?}", btree);
+
+    let btree = BTree::<u16, String>::create(p);
+    println!("{:?}", btree);
+
+    let _ = remove_file(p);
+    assert!(false);
+}
+
+#[test]
+fn test_split_multi() {
+    let p = "sample/test_split_multi";
+    if File::open(p).is_err() {
+        let mut btree = BTree::<u16, String>::create(p);
+        btree.insert(22u16, "abc".to_string());
+        btree.insert(55u16, "defg".to_string());
+        btree.insert(33u16, "あ".to_string());
+        btree.insert(66u16, "い".to_string());
+        btree.insert(44u16, "あふれちゃう".to_string());
+        btree.insert(35u16, "add".to_string());    
+    }
+
+    let mut btree = BTree::<u16, String>::create(p);
+    println!("{:?}", btree);
+    if btree.search(&58).is_err() {
+        btree.insert(58u16, "i am 58".to_string());
+    }
+    // btree.insert(100, "こんどはどうだ".to_string());
+    // btree.insert(16, "sixteen".to_string());
+    // btree.insert(18, "新成人".to_string());
+
+    assert_eq!(btree.search(&33), Ok("い".to_string()));
 }
 
 fn file_bytes(path: impl AsRef<Path>) -> Vec<u8> {

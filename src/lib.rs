@@ -5,6 +5,7 @@ mod slot;
 mod branch;
 mod leaf;
 mod node;
+mod meta;
 
 mod storage;
 mod btree;

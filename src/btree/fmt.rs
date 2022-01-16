@@ -5,6 +5,7 @@ use std::fmt::Formatter;
 use crate::btree::BTree;
 
 use crate::page::Page;
+use crate::meta::Meta;
 use crate::node::Node;
 use crate::slot::SlotBytes;
 
@@ -14,7 +15,13 @@ impl<K, V> Debug for BTree<K, V>
           V: SlotBytes + Debug,
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), Error> {
+        // let _ = writeln!(f, "{:?}", self.root_page_id);
         if let Some(root_page_id) = self.root_page_id {
+            let mut meta_page = Page::new(0);
+            self.storage.borrow_mut().read_page(&mut meta_page);
+            let meta = Meta::new(meta_page);
+            let _ = writeln!(f, "MT(0): {:?}", meta);
+
             self.fmt_internal(f, root_page_id)
         } else {
             writeln!(f, "<empty>", )

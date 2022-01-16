@@ -1,6 +1,6 @@
 use std::convert::TryInto;
 
-
+#[derive(Debug)]
 pub struct Slot<K, V> where
     K: SlotBytes + Clone,
     V: SlotBytes + Clone,
@@ -54,6 +54,7 @@ impl SlotBytes for u16 {
     }
 
     fn from_bytes(bytes: &[u8]) -> Self {
+        // dbg!(bytes);
         u16::from_le_bytes(bytes.try_into().unwrap())
     }
 }

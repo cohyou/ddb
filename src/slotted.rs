@@ -60,6 +60,7 @@ impl<K: Ord + SlotBytes, V: SlotBytes, P: Pointer> Slotted<K, V, P> {
         match self.search_slot_offset(key) {
             Some(pointer) => {
                 let bytes = &self.page.bytes[pointer.value_range()];
+                // dbg!(pointer.value_size());
                 Some(V::from_bytes(bytes))
             },
             None => None,
