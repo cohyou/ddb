@@ -267,7 +267,7 @@ impl<K, V> BTree<K, V>
     {
         let mut keys_iter = keys.split_at(keys.len() / 2).1.iter();
         let split_key = keys_iter.next().unwrap();
-        println!("split_key: {:?}", split_key);
+
         if breadcrumb.is_empty() {
             let _ = parent_branch.slotted.insert(&Slot::new(split_key.clone(), old_slotted.page.id));
 
