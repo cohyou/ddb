@@ -10,7 +10,7 @@ use std::fs::File;
 pub const PAGE_SIZE: usize = 64;
 
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Page { pub id: u16, pub bytes: [u8; PAGE_SIZE] }
 
 impl Page {

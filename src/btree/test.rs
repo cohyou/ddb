@@ -64,7 +64,7 @@ fn test_insert_split() {
     btree.insert(55u16, "defg".to_string());
     btree.insert(33u16, "あ".to_string());
     btree.insert(66u16, "い".to_string());
-    // btree.insert(11u16, "ぽ".to_string());
+    btree.insert(11u16, "ぽ".to_string());
 
     match btree.read_node(btree.root_page_id.unwrap()) {
         Node::Leaf(mut leaf) => {
@@ -88,7 +88,7 @@ fn test_search_split() {
     btree.insert(33u16, "あ".to_string());
     btree.insert(66u16, "い".to_string());
     btree.insert(44u16, "あふれちゃう".to_string());
-    btree.insert(35u16, "add".to_string());
+    // btree.insert(35u16, "add".to_string());
     println!("{:?}", btree);
 
     let _ = remove_file(p);
@@ -171,6 +171,43 @@ fn test_split_nested() {
 
     // let _ = remove_file(p);
     assert_eq!(btree.search(&33), Ok("あ".to_string()));
+}
+
+#[test]
+fn test_split_branch() {
+    let p = "sample/test_split_branch";
+    if File::open(p).is_err() {
+        let mut btree = BTree::<u16, String>::create(p);
+        btree.insert(22, "abc".to_string());
+        btree.insert(55, "defg".to_string());
+        btree.insert(33, "あ".to_string());
+        btree.insert(66, "い".to_string());
+        btree.insert(44, "あふれちゃう".to_string());
+        btree.insert(35, "add".to_string());    
+        btree.insert(58, "i am 58".to_string());
+        btree.insert(100, "こんどはどうだ".to_string());
+        btree.insert(16, "sixteen".to_string());
+        btree.insert(18, "新成人".to_string());
+        btree.insert(99, "ナインティナ".to_string());
+        btree.insert(77, "lucky seven!!".to_string());
+        btree.insert(41, "いつまでやるんよ".to_string());
+        btree.insert(7, "七転".to_string());
+        btree.insert(8, "八倒".to_string());
+        btree.insert(25, "around thirty".to_string());
+        btree.insert(64, "8bit".to_string());
+        btree.insert(13, "金曜日".to_string());
+        btree.insert(50, "50:50".to_string());
+    }
+
+    let mut btree = BTree::<u16, String>::create(p);
+    println!("{:?}", btree);
+    if btree.search(&28).is_err() {
+        btree.insert(28, "I am perfect number.".to_string());
+        println!("{:?}", btree);
+    }
+
+    let _ = remove_file(p);
+    assert_eq!(btree.search(&28), Ok("I am perfect number.".to_string()));
 }
 
 // #[allow(dead_code)]

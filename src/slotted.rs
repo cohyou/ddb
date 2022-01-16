@@ -72,6 +72,7 @@ impl<K: Ord + SlotBytes + Debug, V: SlotBytes + Debug, P: Pointer+ Debug> Slotte
     }
 
     pub fn delete(&mut self, key: &K) -> Result<(), Error> {
+        // println!("delete key: {:?}", key);
         match self.search_pointer(key) {
             Some(pointer_index) => {
                 let pointer = self.pointer_index_to_pointer(pointer_index);
@@ -85,9 +86,9 @@ impl<K: Ord + SlotBytes + Debug, V: SlotBytes + Debug, P: Pointer+ Debug> Slotte
                 self.delete_pointer(pointer_index);
 
                 self.decrement_number_of_pointer();
-
+                
                 self.update_slot_offsets(pointer);
-
+                // println!("after delete: {:?}", self);
                 Ok(())
             },
             None => Err(Error::NotFound),
@@ -144,6 +145,10 @@ impl<K: Ord + SlotBytes + Debug, V: SlotBytes + Debug, P: Pointer+ Debug> Slotte
         if end_of_free_space < bytes.len() {
             return true;
         }
+        // println!("end_of_free_space: {:?} bytes.len: {:?} Self::pointer_size: {:?}", end_of_free_space, bytes.len(), Self::pointer_size());
+        if end_of_free_space < bytes.len() + Self::pointer_size() {
+            return true;
+        }
         let offset_slot = end_of_free_space - bytes.len() - Self::pointer_size();
 
         offset_slot < offset_pointer
@@ -185,10 +190,12 @@ impl<K: Ord + SlotBytes + Debug, V: SlotBytes + Debug, P: Pointer+ Debug> Slotte
         let start_of_slots = self.end_of_free_space() as usize;
         let start_of_deleting_slot = pointer.slot_offset() as usize;
         let slot_len = pointer.slot_size() as usize;
+        // println!("delete_slot: start_of_slots: {:?} start_of_deleting_slot: {:?}", start_of_slots, start_of_deleting_slot);
         if start_of_slots < start_of_deleting_slot {
             let bytes = &mut self.page.bytes;
             bytes.copy_within(start_of_slots..start_of_deleting_slot, start_of_slots + slot_len);
         }
+        // println!("delete_slot: slot_len: {:?}", slot_len);
         &self.page.bytes[range(start_of_slots, slot_len)].fill(0);
     }
 
@@ -198,6 +205,7 @@ impl<K: Ord + SlotBytes + Debug, V: SlotBytes + Debug, P: Pointer+ Debug> Slotte
         let end_of_pointers = self.start_of_free_space();
         let range = start_of_pointers..end_of_pointers;
         let bytes = &mut self.page.bytes;
+        // println!("delete_pointer: range:{:?} start_of_deleting_pointer: {:?}", range, start_of_deleting_pointer);
         bytes.copy_within(range, start_of_deleting_pointer);
         bytes[end_of_pointers - Self::pointer_size()..end_of_pointers].fill(0);
     }

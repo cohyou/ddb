@@ -54,7 +54,11 @@ impl SlotBytes for u16 {
     }
 
     fn from_bytes(bytes: &[u8]) -> Self {
-        u16::from_le_bytes(bytes.try_into().unwrap())
+        if let Ok(bytes) = bytes.try_into() {
+            u16::from_le_bytes(bytes)
+        } else {
+            panic!("SlotBytes for u16 from_bytes bytes: {:?}", bytes);
+        }
     }
 }
 

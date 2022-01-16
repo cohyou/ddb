@@ -46,7 +46,11 @@ impl<K, V> BTree<K, V>
                 for (_, v) in branch.slotted.slots() {
                     let _ = self.fmt_internal(f, v);
                 }
-                self.fmt_internal(f, branch.max_page_id())
+                if branch.max_page_id() > 0 {
+                    self.fmt_internal(f, branch.max_page_id())
+                } else {
+                    write!(f, "")
+                }
             },
         }
     }

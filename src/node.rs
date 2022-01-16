@@ -32,26 +32,27 @@ impl<K: Ord + SlotBytes + Debug, V: SlotBytes + Debug> Node<K, V> {
         }
     }
 
-    pub fn create(page: Page) -> Self {
-        match NodeType::new(&page) {
-            NodeType::Leaf => {
-                let slotted = Slotted::<K, V, LeafPointer>::create(page);
-                let leaf = Leaf::new(slotted);                
-                Node::Leaf(leaf)
-            },
-            NodeType::Branch => {
-                let slotted = Slotted::<K, u16, BranchPointer>::create(page);
-                let branch = Branch::new(slotted);
-                Node::Branch(branch)
-            }
-        }
-    }
+    // pub fn create(page: Page) -> Self {
+    //     match NodeType::new(&page) {
+    //         NodeType::Leaf => {
+    //             let slotted = Slotted::<K, V, LeafPointer>::create(page);
+    //             let leaf = Leaf::new(slotted);                
+    //             Node::Leaf(leaf)
+    //         },
+    //         NodeType::Branch => {
+    //             let slotted = Slotted::<K, u16, BranchPointer>::create(page);
+    //             let branch = Branch::new(slotted);
+    //             Node::Branch(branch)
+    //         }
+    //     }
+    // }
 }
 
+#[derive(PartialEq)]
 pub enum NodeType { Leaf, Branch, }
 
 impl NodeType {
-    fn new(page: &Page) -> Self {
+    pub fn new(page: &Page) -> Self {
         if page.i16_bytes(0) >= 0 {
             NodeType::Leaf
         } else {

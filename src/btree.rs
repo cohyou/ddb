@@ -85,13 +85,26 @@ impl<K, V> BTree<K, V>
 
     pub fn delete(&mut self, key: &K) where K: SlotBytes {
         if let Some(root_page_id) = self.root_page_id {
-            let node = self.read_node(root_page_id);
-            match node {
-                Node::Leaf(mut leaf) => {
-                    let _ = leaf.slotted.delete(key);
-                },
-                Node::Branch(_branch) => unimplemented!(),
-            }
+            self.delete_internal(root_page_id, key);
+        }
+    }
+
+    fn delete_internal(&mut self, page_id: u16, key: &K) {
+        println!("delete_internal: page_id: {:?} key: {:?}", page_id, key);
+        let node = self.read_node(page_id);
+        match node {
+            Node::Leaf(mut leaf) => {
+                let _ = leaf.slotted.delete(key);
+            },
+            Node::Branch(branch) => {
+                for k in branch.slotted.keys() {
+                    if key < &k {
+                        let child_page_id = branch.slotted.search(&k).unwrap();
+                        return self.delete_internal(child_page_id, key);
+                    }
+                }
+                self.delete_internal(branch.max_page_id(), key);
+            },
         }
     }
 
@@ -152,101 +165,156 @@ impl<K, V> BTree<K, V>
         }
     }
 
-    fn split<Val: Debug, P: Pointer + Debug>(&mut self, slotted: &mut Slotted<K, Val, P>, slot: Slot<K, Val>, breadcrumb: &mut Vec<u16>)
+    fn split<Val, Ptr>(&mut self, slotted: &mut Slotted<K, Val, Ptr>, slot: Slot<K, Val>, breadcrumb: &mut Vec<u16>)
         where K: SlotBytes + Clone,
-              Val: SlotBytes + Clone, 
+              Val: SlotBytes + Clone + Debug,
+              Ptr: Pointer + Debug,
     {
         // println!("split: slotted: {:?} slot: {:?} breadcrumb: {:?}", &slotted.slots(), &slot, &breadcrumb);
+
         let new_page = self.storage.borrow_mut().allocate_page();
-        match Node::create(new_page) {
-            Node::Leaf(mut leaf) => {
-                let mut keys = slotted.keys();
-                keys.push(slot.key.clone());
-                keys.sort();
-                let mut new_slot_inserted = false;
-                for key in keys.split_at(keys.len() / 2).1.iter().rev() {
-                    match slotted.search(key) {
-                        Some(value) => {
-                            let _ = leaf.slotted.insert(&Slot::new(key.clone(), value));
-                            let _ = slotted.delete(key);
-                        },
-                        None => {
-                            let _ = leaf.slotted.insert(&slot);
-                            new_slot_inserted = true
-                        }
-                    }
+        let mut new_slotted = Slotted::<K, Val, Ptr>::create(new_page);
+        new_slotted.set_node_type(NodeType::new(&slotted.page));
+
+        let mut keys = slotted.keys();
+
+        self.transfer_slots(&mut keys, slotted, &mut new_slotted, &slot);
+
+        let mut parent_branch = self.parent_branch(&mut new_slotted, breadcrumb);
+
+        self.update_parent_branch(&keys, slotted, &mut new_slotted, breadcrumb, &mut parent_branch);
+
+        self.write_splitted_pages(slotted, &mut new_slotted, &mut parent_branch);
+    }
+
+    fn transfer_slots<Val, Ptr>(&mut self,
+        keys: &mut Vec<K>,
+        old_slotted: &mut Slotted<K, Val, Ptr>, 
+        new_slotted: &mut Slotted<K, Val, Ptr>, 
+        slot: &Slot<K, Val>
+    )
+        where K: SlotBytes + Clone,
+              Val: SlotBytes + Clone + Debug,
+              Ptr: Pointer + Debug,
+    {
+        keys.push(slot.key.clone());
+        keys.sort();
+        let mut new_slot_inserted = false;
+        for key in keys.split_at(keys.len() / 2).1.iter().rev() {
+            match old_slotted.search(key) {
+                Some(value) => {
+                    let _ = new_slotted.insert(&Slot::new(key.clone(), value));
+                    let _ = old_slotted.delete(key);
+                },
+                None => {
+                    let _ = new_slotted.insert(&slot);
+                    new_slot_inserted = true
                 }
+            }
+        }
 
-                if !new_slot_inserted {
-                    let _ = slotted.insert(&slot);
-                }
+        // transfer max_page_id
+        if NodeType::new(&old_slotted.page) == NodeType::Branch {
+            let max_page_id = old_slotted.page.u16_bytes(4);
+            // 0 is treated as invalid page_id
+            old_slotted.page.set_u16_bytes(4, 0);
+            new_slotted.page.set_u16_bytes(4, max_page_id);
+        }
 
-                // println!("splitted! {:?} {:?}", &slotted.slots(), &leaf);
+        if !new_slot_inserted {
+            let _ = old_slotted.insert(&slot);
+        }
 
-                let mut parent_branch = if breadcrumb.is_empty() {
-                    // add new branch
-                    let page = self.storage.borrow_mut().allocate_page();
-                    let parent_slotted = Slotted::<K, u16, BranchPointer>::create(page);
-                    let mut branch = Branch::new(parent_slotted);
-                    branch.set_max_page_id(leaf.slotted.page.id);
-                    branch
-                } else {
-                    let page_id = breadcrumb[breadcrumb.len() - 1];
-                    let mut page = Page::new(page_id);
-                    self.storage.borrow_mut().read_page(&mut page);
-                    let parent_slotted = Slotted::<K, u16, BranchPointer>::new(page);
-                    Branch::new(parent_slotted)
-                };
-                // println!("parent_branch: {:?}", &parent_branch);
+        // println!("splitted! old: {:?} new: {:?}", &old_slotted, &new_slotted);
+    }
 
-                let mut keys_iter = keys.split_at(keys.len() / 2).1.iter();
-                let split_key = keys_iter.next().unwrap();
+    fn parent_branch<Val, Ptr>(&mut self,
+        new_slotted: &mut Slotted<K, Val, Ptr>, 
+        breadcrumb: &mut Vec<u16>
+    ) -> Branch<K>
+        where K: SlotBytes + Clone,
+            Val: SlotBytes + Clone + Debug,
+            Ptr: Pointer + Debug,
+    {
+        let parent_branch = if breadcrumb.is_empty() {
+            // add new branch
+            let page = self.storage.borrow_mut().allocate_page();
+            let parent_slotted = Slotted::<K, u16, BranchPointer>::create(page);
+            let mut branch = Branch::new(parent_slotted);
+            branch.set_max_page_id(new_slotted.page.id);
+            branch
+        } else {
+            let page_id = breadcrumb[breadcrumb.len() - 1];
+            let mut page = Page::new(page_id);
+            self.storage.borrow_mut().read_page(&mut page);
+            let parent_slotted = Slotted::<K, u16, BranchPointer>::new(page);
+            Branch::new(parent_slotted)
+        };
+        // println!("parent_branch: {:?}", &parent_branch);
+        parent_branch
+    }
 
-                if breadcrumb.is_empty() {
-                    let _ = parent_branch.slotted.insert(&Slot::new(split_key.clone(), slotted.page.id));
+    fn update_parent_branch<Val, Ptr>(&mut self,
+        keys: &Vec<K>,
+        old_slotted: &mut Slotted<K, Val, Ptr>, 
+        new_slotted: &mut Slotted<K, Val, Ptr>, 
+        breadcrumb: &mut Vec<u16>, 
+        parent_branch: &mut Branch<K>
+    )
+        where K: SlotBytes + Clone,
+            Val: SlotBytes + Clone + Debug,
+            Ptr: Pointer + Debug,
+    {
+        let mut keys_iter = keys.split_at(keys.len() / 2).1.iter();
+        let split_key = keys_iter.next().unwrap();
+        println!("split_key: {:?}", split_key);
+        if breadcrumb.is_empty() {
+            let _ = parent_branch.slotted.insert(&Slot::new(split_key.clone(), old_slotted.page.id));
 
-                    // set root page id
-                    self.set_root_page_id(parent_branch.slotted.page.id);
-                } else {
-                    breadcrumb.pop();
-                    let _ = self.insert_page_id_into_branch(&mut parent_branch, split_key.clone(), slotted.page.id, breadcrumb);
-                    // println!("split_key: {:?} slotted.page.id: {:?} parent_branch.max_page_id: {:?}", split_key, slotted.page.id, parent_branch.max_page_id());
-                    if slotted.page.id == parent_branch.max_page_id() {
-                        parent_branch.set_max_page_id(leaf.slotted.page.id);
-                    } else {
-                        let slots = parent_branch.slotted.slots();
-                        let rewriting_key = slots.iter().rfind(|(_k, v)| v == &slotted.page.id).unwrap();
-                        // println!("rewriting_key: {:?}", rewriting_key);
+            // set root page id
+            self.set_root_page_id(parent_branch.slotted.page.id);
+        } else {
+            breadcrumb.pop();
+            let _ = self.insert_page_id_into_branch(parent_branch, split_key.clone(), old_slotted.page.id, breadcrumb);
+            // println!("slotted.page.id: {:?} parent_branch.max_page_id: {:?}", old_slotted.page.id, parent_branch.max_page_id());
+            if old_slotted.page.id == parent_branch.max_page_id() {
+                parent_branch.set_max_page_id(new_slotted.page.id);
+            } else {
+                let slots = parent_branch.slotted.slots();
+                let rewriting_key = slots.iter().rfind(|(_k, v)| v == &old_slotted.page.id).unwrap();
+                // println!("rewriting_key: {:?}", rewriting_key);
 
-                        let _ = parent_branch.slotted.delete(&rewriting_key.0);
-                        let _ = parent_branch.slotted.insert(&Slot::new(rewriting_key.0.clone(), leaf.slotted.page.id));
-                    }
-                }
-
-                self.storage.borrow_mut().write_page(&mut slotted.page);
-                self.storage.borrow_mut().write_page(&mut leaf.slotted.page);
-                self.storage.borrow_mut().write_page(&mut parent_branch.slotted.page);
-            },
-            Node::Branch(_branch) => {
-                unimplemented!()
-            },
+                let _ = parent_branch.slotted.delete(&rewriting_key.0);
+                let _ = parent_branch.slotted.insert(&Slot::new(rewriting_key.0.clone(), new_slotted.page.id));
+            }
         }
     }
 
-    fn insert_page_id_into_branch(&mut self, branch: &mut Branch<K>, key: K, value: u16, _breadcrumb: &mut Vec<u16>) 
-        where
-            K: SlotBytes + Clone,
+    fn write_splitted_pages<Val, Ptr>(&mut self, 
+        old_slotted: &mut Slotted<K, Val, Ptr>, 
+        new_slotted: &mut Slotted<K, Val, Ptr>, 
+        parent_branch: &mut Branch<K>
+    )
+        where K: SlotBytes + Clone,
+            Val: SlotBytes + Clone + Debug,
+            Ptr: Pointer + Debug,
+    {
+        self.storage.borrow_mut().write_page(&mut old_slotted.page);
+        self.storage.borrow_mut().write_page(&mut new_slotted.page);
+        self.storage.borrow_mut().write_page(&mut parent_branch.slotted.page);
+    }
+
+    fn insert_page_id_into_branch(&mut self, branch: &mut Branch<K>, key: K, value: u16, breadcrumb: &mut Vec<u16>) 
+        where K: SlotBytes + Clone,
     {
         // println!("insert_page_id_into_branch: branch: {:?} key: {:?} value: {:?}", branch, key, value);
         let slot = Slot::new(key, value);
         match branch.slotted.insert(&slot) {
             Ok(_) => {
-                // println!("{:?}", branch);
                 self.storage.borrow_mut().write_page(&mut branch.slotted.page);
             },
             Err(_) => {
-                unimplemented!();
-                // self.split(&mut branch.slotted, slot, breadcrumb);
+                self.split(&mut branch.slotted, slot, breadcrumb);
             },
         }
     }
